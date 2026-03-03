@@ -8,11 +8,11 @@ class Model_Predictive_Controller:
 
         ## CONFIG
         # MPC setup
-        Q_T_bat = 10
+        Q_T_bat = 10000
         Q_SOC = 0 # Don't care what SOC is. Might cause problems in the future
         
-        R_omega = 0.1
-        R_Q_heat = 0.1
+        R_omega = 0.01
+        R_Q_heat = 1
         t_horizon = 40
         N = 40 # number of look ahead steps
         step_horizon = t_horizon/N # time between steps in seconds
@@ -23,7 +23,7 @@ class Model_Predictive_Controller:
         SOC_min = 0
         SOC_max = 1
         
-        omega_max = 4000*2*np.pi/60
+        omega_max = 4000 #*2*np.pi/60
         omega_min = 0 
 
         Q_heat_max = 50 # W
@@ -72,14 +72,14 @@ class Model_Predictive_Controller:
 
         # discretization model (e.g. x2 = f(x1, v, t) = x1 + v*dt)
         # Parameters
-        m_battery = 20*2.5*5
+        m_battery = 20*2.5*4
         c_battery = 795
         c_coolant = 3500
         density_coolant = 1050
-        pump_displacement = 1/(2*np.pi)*40/(100^3) # D parameter in simulink
+        pump_displacement = 1/(2*np.pi)*40/(100**3) # D parameter in simulink
         R_battery = 4*20*0.0128 # Battery resistance
         C_battery = 28*3600 # in coloumb
-        K_heater = 500
+        K_heater = 50
         alpha = 0.65
         ## Controller model 
         T_bat_dot_model = alpha/(m_battery*c_battery) * (current**2 * R_battery + density_coolant*pump_displacement*omega*c_coolant*Q_heat/K_heater)
@@ -170,11 +170,13 @@ class Model_Predictive_Controller:
         self.N = N
 
     def DM2Arr(self,dm):
-    # returns a full matrix instead if a soarse ibe
+    # returns a full matrix instead if a sparse one
         return np.array(dm.full())
     def MPC_step(self, T_bat_0, SOC_0, current):
+        start = time()
         state_init = ca.DM([T_bat_0, SOC_0])
         state_target = self.state_target
+        print('state init', state_init, 'state target', state_target)
         X0 = self.X0
         u0 = self.u0
         args = self.args
@@ -209,5 +211,9 @@ class Model_Predictive_Controller:
         inp = self.DM2Arr(self.u0[:, 0])
         omega = inp[0].item()
         Q_heat = inp[1].item()
-        return omega, Q_heat
+        X_predict = self.DM2Arr(self.X0[:, 1])
+        T_bat_predict = X_predict[0].item()
+        end = time()
+        print(end - start, "s")
+        return omega, Q_heat, T_bat_predict
         

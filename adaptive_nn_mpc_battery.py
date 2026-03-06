@@ -39,7 +39,7 @@ class BatteryLearnedDynamics:
         X = cs.vertcat(T_bat, SOC)
         omega = cs.MX.sym('omega') # Power into heater/cooler given as efficiency*Pin
         Q_heat = cs.MX.sym('Q_heat') # Pump control (rpm that is converted to kg/s)
-        current = 0 #cs.MX.sym('current')
+        current = cs.MX.sym('current')
         U = cs.vertcat(omega, Q_heat)
         nx = 2
         nu = 2
@@ -76,7 +76,7 @@ class BatteryLearnedDynamics:
         residual = self.residual_model(mlp_input.T).T 
         X_dot_residual = cs.vertcat(residual[0], residual[1]) # x1 dot and x2 dot residual
 
-        f_expl = X_dot_nominal + X_dot_residual # adding x dot residual leads to some stochasticity, maybe because we have a arbitrary neural network initially?
+        f_expl = X_dot_nominal #+ X_dot_residual # adding x dot residual leads to some stochasticity, maybe because we have a arbitrary neural network initially?
         x_start = np.array([-10+CELSIUS_TO_KELVIN,1]) # initial constraint (gets overwritten)
 
         # store to struct
@@ -85,7 +85,7 @@ class BatteryLearnedDynamics:
         model.xdot = cs.MX.sym('xdot', 2)
         model.u = U
         model.z = cs.vertcat([])
-        model.p = cs.vertcat([]) #current
+        model.p = current #cs.vertcat([]) #current
         model.f_expl = f_expl
         model.f_nominal = X_dot_nominal
         model.x_start = x_start
@@ -147,8 +147,8 @@ class MPC:
         l4c_y_expr = None
 
         # Define weight parameters
-        Q = 1e0 * np.diag([100000, 0])
-        R = 1e-5 * np.diag([1, 0.1])
+        Q = np.diag([10000, 0])
+        R = np.diag([0.0001, 0.0000001])
         ocp.cost.W = scipy.linalg.block_diag(Q,R)
 
         # Initial state (will be overwritten?)
@@ -161,7 +161,7 @@ class MPC:
 
         # Set constraints
         omega_max = 4000*2*np.pi/60
-        omega_min = 10
+        omega_min = 50
         Q_heat_max = 4000
         Q_heat_min = 0
         Tb_max = 50 + CELSIUS_TO_KELVIN
@@ -182,6 +182,9 @@ class MPC:
         ocp.solver_options.nlp_solver_type = "SQP_RTI"
         ocp.solver_options.model_external_shared_lib_dir = self.external_shared_lib_dir
         ocp.solver_options.model_external_shared_lib_name = self.external_shared_lib_name 
+        
+        # Will be overwritten
+        ocp.parameter_values = 0
 
         return ocp
 
@@ -246,13 +249,15 @@ class Controller:
             # y_ref_k = np.array([Tb_ref, SOC_ref, 0])
             y_ref_k = np.array([T_bat_target, 0.0, 0.0, 0.0])
             self.solver.set(k, "yref", y_ref_k)
-            #self.solver.set(k, "p", current_0)
+            self.solver.set(k, "p", current_0)
 
         # Set terminal reference
         # y_ref_terminal = np.array([Tb_ref, SOC_ref])
         y_ref_terminal = np.array([T_bat_target, 0.0]) # Terminal cost only on states so 2x1 instead of 4x1 above
-        print(y_ref_terminal)
+        #print(y_ref_terminal)
         self.solver.set(self.N, "yref", y_ref_terminal)
+        self.solver.set(self.N, "p", current_0)
+
 
         start = time.time()
         xt = np.array([T_bat_0,SOC_0])
@@ -267,7 +272,8 @@ class Controller:
         ut = self.solver.get(0, "u")
         omega_value = ut[0].item()
         Q_heat_value = ut[1].item()
-        
+        u_N = self.solver.get(10,'u')
+        print('slacking off input', u_N)
         
         self.obs_buffer.append((xt[0], xt[1], omega_value, Q_heat_value, self.xt_pred[0], self.xt_pred[1]))
         # sl = solver.get(1, "sl")
@@ -275,7 +281,7 @@ class Controller:
         # print(sl,su)
         
         # Want to compare prediction at time step 0 with value at time step 1
-        # So dealy update of xt pred
+        # So delay update of xt pred
         pred = self.solver.get(1, 'x')
         self.xt_pred = np.array([pred[0].item(), pred[1].item()])
      
@@ -311,10 +317,11 @@ class Controller:
                 loss.backward() # calculates gradient
                 self.residual_optimizer.step() # one optimization step to update parameters
             for p in self.residual_mlp.parameters(): p.requires_grad = False
-            print(self.current_iterate)
-            self.l4c_residual.update(self.residual_mlp)
+            print("NO UPDATE MODEL AT", self.current_iterate)
+            #self.l4c_residual.update(self.residual_mlp)
 
         elapsed = time.time() - start
+        print(omega_value, Q_heat_value, self.xt_pred[0], T_bat_0, T_bat_target)
         print(elapsed, 'ms')
         self.current_iterate += 1
         return omega_value, Q_heat_value, self.xt_pred[0]

@@ -32,9 +32,9 @@ class CascadedTankLearnedDynamics:
         self.residual_model = residual_model # Residual model is L4Casadi residual
     
     def model(self):
-        nominal_ratio = 0.5
+        nominal_ratio = 1
         A1 = 1 * nominal_ratio
-        a1 = 0.2 #/ nominal_ratio
+        a1 = 0.1 #/ nominal_ratio
         A2 = 1 * nominal_ratio
         a2 = 0.1 #* nominal_ratio
         
@@ -49,13 +49,14 @@ class CascadedTankLearnedDynamics:
         h2 = cs.MX.sym('h2')
         X = cs.vertcat(h1, h2)
         u = cs.MX.sym('u')
+        leakage = cs.MX.sym('leakage')
         nx = 2
         nu = 1
 
         # Dynamics
         
-        h1_dot = k*u/(rho*A1) - a1/A1 * cs.sqrt(2*g*h1+0.00001)
-        h2_dot = a1/A1 * cs.sqrt(2*g*h1 + 0.00001) - a2/A2 * cs.sqrt(2*g*h2 + 0.00001)
+        h1_dot =  k*u/(rho*A1) - a1/A1 * cs.sqrt(2*g*h1+0.00001) + leakage
+        h2_dot = a1/A1 * cs.sqrt(2*g*h1 + 0.00001) - a2/A2 * cs.sqrt(2*g*h2 + 0.00001) 
         X_dot_nominal = cs.vertcat(h1_dot, h2_dot)
 
         mlp_input = cs.vertcat(X, u)
@@ -71,7 +72,7 @@ class CascadedTankLearnedDynamics:
         model.xdot = cs.MX.sym('xdot', 2)
         model.u = u
         model.z = cs.vertcat([])
-        model.p = cs.vertcat([])
+        model.p = leakage # cs.vertcat([])
         model.f_expl = f_expl
         model.f_nominal = X_dot_nominal
         model.x_start = x_start
@@ -129,6 +130,8 @@ class MPC:
             ocp.cost.Vu[i + nx, i] = 1
         ocp.cost.Vz = np.array([[]]) # don't know what the V_z z, what the variable z should be
         ocp.cost.Vx_e = np.eye(nx)
+
+        ocp.parameter_values = 0
         l4c_y_expr = None
 
         # Define weight parameters
@@ -189,8 +192,8 @@ h1 = cs.SX.sym('h1')
 h2 = cs.SX.sym('h2') 
 u = cs.SX.sym('u_in')
 ## Actual model
-h1_dot = k*u/(rho*A1) - a1/A1 * cs.sqrt(2*g*h1+0.00001)
-h2_dot = a1/A1 * cs.sqrt(2*g*h1 + 0.00001) - a2/A2 * cs.sqrt(2*g*h2 + 0.00001)
+h1_dot = k*u/(rho*A1) - a1/A1 * cs.sqrt(2*g*h1+0.00001) 
+h2_dot = a1/A1 * cs.sqrt(2*g*h1 + 0.00001) - a2/A2 * cs.sqrt(2*g*h2 + 0.00001) 
 ode = cs.vertcat(h1_dot, h2_dot)
 states = cs.vertcat(
     h1,
@@ -219,7 +222,7 @@ t_horizon = 5
 learned_model = CascadedTankLearnedDynamics(l4c_residual)
 casadi_model = learned_model.model()
 
-nominal_func = cs.Function('nom', [casadi_model.x, casadi_model.u], [casadi_model.f_nominal]) # x, u --> f What our controller knowns
+nominal_func = cs.Function('nom', [casadi_model.x, casadi_model.u, casadi_model.p], [casadi_model.f_nominal]) # x, u --> f What our controller knowns
 print(nominal_func)
 solver = MPC(model=learned_model.model(), N=N, t_horizon = t_horizon,
             external_shared_lib_dir=l4c_residual.shared_lib_dir,
@@ -253,10 +256,12 @@ for i in range(Steps):
         # Set terminal reference
         y_ref_k = np.array([h1_ref, h2_ref, 0])
         solver.set(k, "yref", y_ref_k)
+        solver.set(k, "p", 0.1)
 
     # Set terminal reference
     y_ref_terminal = np.array([h1_ref, h2_ref])
     solver.set(N, "yref", y_ref_terminal)
+    solver.set(N, "p", 0.1)
 
     start = time.time()
     # Apply current state as constraint
@@ -294,7 +299,7 @@ for i in range(Steps):
        
         
 
-        nominal = np.array([nominal_func(x[:2], x[2]).full().flatten() for x in data])
+        nominal = np.array([nominal_func(x[:2], x[2],0.1).full().flatten() for x in data])
         #y_true = np.array([f(x[:2], x[3]).full().flatten() for x in data])
         y_nominal = nominal[:, :] # dx2 and dx4 from nominal model
         #print(y_nominal.shape)
@@ -303,6 +308,7 @@ for i in range(Steps):
         #print(y_true)
         #print(y_true - y_nominal)
         #stop
+        print(sum(y_true - y_nominal))
         y_target = torch.tensor(y_true - y_nominal, dtype=torch.float32)
 
         for p in residual_mlp.parameters(): p.requires_grad = True

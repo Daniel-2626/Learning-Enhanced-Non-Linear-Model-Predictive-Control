@@ -39,7 +39,7 @@ class BatteryLearnedDynamics:
         X = cs.vertcat(T_bat, SOC)
         omega = cs.MX.sym('omega') # Power into heater/cooler given as efficiency*Pin
         Q_heat = cs.MX.sym('Q_heat') # Pump control (rpm that is converted to kg/s)
-        current = cs.MX.sym('current')
+        current = 0 #cs.MX.sym('current')
         U = cs.vertcat(omega, Q_heat)
         nx = 2
         nu = 2
@@ -85,7 +85,7 @@ class BatteryLearnedDynamics:
         model.xdot = cs.MX.sym('xdot', 2)
         model.u = U
         model.z = cs.vertcat([])
-        model.p = cs.vertcat(current)
+        model.p = cs.vertcat([]) #current
         model.f_expl = f_expl
         model.f_nominal = X_dot_nominal
         model.x_start = x_start
@@ -128,6 +128,7 @@ class MPC:
         ocp.dims.nx = nx
         ocp.dims.nu = nu
         ocp.dims.ny = ny
+
         ocp.solver_options.tf = t_horizon
 
         # initialize cost function
@@ -211,14 +212,14 @@ class Controller:
         self.l4c_residual = l4c_residual
         
         # MPC Setup 
-        N = 40
+        self.N = 40
         t_horizon = 40
         learned_model = BatteryLearnedDynamics(l4c_residual)
       
         casadi_model = learned_model.model()
 
         
-        self.solver = MPC(model=learned_model.model(), N=N, t_horizon = t_horizon,
+        self.solver = MPC(model=learned_model.model(), N=self.N, t_horizon = t_horizon,
                     external_shared_lib_dir=l4c_residual.shared_lib_dir,
                     external_shared_lib_name=l4c_residual.name).solver # Returns the solver object from MPC
 
@@ -227,30 +228,31 @@ class Controller:
 
         # SOC_ref = None # This is not actually tracked
         self.obs_buffer = []
-        self.batch_size = N
-        self.T_update = N
+        self.batch_size = self.N
+        self.T_update = self.N
         self.current_iterate = 0
         self.xt_pred = np.array([CELSIUS_TO_KELVIN, 1])
 
     def get_input(self, T_bat_target, T_bat_0, SOC_0, current_0):
         if self.current_iterate == 0:
-            self.xt_pred([T_bat_0, SOC_0])
+            self.xt_pred = ([T_bat_0, SOC_0])
 
         # Set reference for each step in MPC horizon
-        for k in range(N):
+        for k in range(self.N):
             #if k == 0: # only store first reference
                 #Tb_ref_history.append(Tb_ref)
                 # SOC_ref_history.append(SOC_ref)
             # Set terminal reference
             # y_ref_k = np.array([Tb_ref, SOC_ref, 0])
-            y_ref_k = np.array([Tb_ref, 0.0])
+            y_ref_k = np.array([T_bat_target, 0.0, 0.0, 0.0])
             self.solver.set(k, "yref", y_ref_k)
-            self.solver.set(k, "p", current_0)
+            #self.solver.set(k, "p", current_0)
 
         # Set terminal reference
         # y_ref_terminal = np.array([Tb_ref, SOC_ref])
-        y_ref_terminal = np.array([Tb_ref, 0.0])
-        self.solver.set(N, "yref", y_ref_terminal)
+        y_ref_terminal = np.array([T_bat_target, 0.0]) # Terminal cost only on states so 2x1 instead of 4x1 above
+        print(y_ref_terminal)
+        self.solver.set(self.N, "yref", y_ref_terminal)
 
         start = time.time()
         xt = np.array([T_bat_0,SOC_0])
@@ -275,9 +277,8 @@ class Controller:
         # Want to compare prediction at time step 0 with value at time step 1
         # So dealy update of xt pred
         pred = self.solver.get(1, 'x')
-        self.xt_pred = np.array[pred[0].item(), pred[1].item()]
+        self.xt_pred = np.array([pred[0].item(), pred[1].item()])
      
-        
         
         # update every 50 time steps
         if self.current_iterate > 0 and (self.current_iterate % self.T_update) == 0 and len(self.obs_buffer) >= self.batch_size:
@@ -310,7 +311,8 @@ class Controller:
                 loss.backward() # calculates gradient
                 self.residual_optimizer.step() # one optimization step to update parameters
             for p in self.residual_mlp.parameters(): p.requires_grad = False
-            self.l4c_residual.update(residual_mlp)
+            print(self.current_iterate)
+            self.l4c_residual.update(self.residual_mlp)
 
         elapsed = time.time() - start
         print(elapsed, 'ms')

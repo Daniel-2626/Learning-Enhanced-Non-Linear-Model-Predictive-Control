@@ -1,0 +1,11 @@
+% Set current
+EV_sys = load("EVBatteryCoolingSystem.mat");
+FTP_75 = EV_sys.FTP_75_Drive_Cycle;
+timeseries = getElement(FTP_75, "Current");
+
+current = timeseries.data;
+time = timeseries.Time;
+
+%%
+time_steps = 1:1:2474;
+current_intp1 = interp1()

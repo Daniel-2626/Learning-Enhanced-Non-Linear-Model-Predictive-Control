@@ -12,8 +12,9 @@ import os
 from datetime import datetime
 import ctypes
 import sys
+import csv
 
-
+np.random.seed(42)
 CELSIUS_TO_KELVIN = 273.15
 
 class MLP(nn.Module):
@@ -75,8 +76,9 @@ class BatteryLearnedDynamics:
         mlp_input = cs.vertcat(X, U)
         residual = self.residual_model(mlp_input.T).T 
         X_dot_residual = cs.vertcat(residual[0], residual[1]) # x1 dot and x2 dot residual
+        print(X_dot_residual)
 
-        f_expl = X_dot_nominal #+ X_dot_residual # adding x dot residual leads to some stochasticity, maybe because we have a arbitrary neural network initially?
+        f_expl = X_dot_nominal + 0*X_dot_residual # adding x dot residual leads to some stochasticity, maybe because we have a arbitrary neural network initially?
         x_start = np.array([-10+CELSIUS_TO_KELVIN,1]) # initial constraint (gets overwritten)
 
         # store to struct
@@ -203,6 +205,7 @@ class MPC:
 
 class Controller:
     def setup(self):
+       
         # Residual MLP: Lightweight
         residual_mlp = MLP(input_dim = 2 + 2, output_dim=2, hidden_dim=64, num_layers=3) # the network
         for param in residual_mlp.parameters():
@@ -235,12 +238,18 @@ class Controller:
         self.T_update = self.N
         self.current_iterate = 0
         self.xt_pred = np.array([CELSIUS_TO_KELVIN, 1])
+        # Reading disturbance info
+        df = pd.read_csv("current_intp1.csv", names=["current"])
+        arr = df.to_numpy(dtype=np.float32)
+        self.disturbance_values = arr
+        
 
     def get_input(self, T_bat_target, T_bat_0, SOC_0, current_0):
         if self.current_iterate == 0:
             self.xt_pred = ([T_bat_0, SOC_0])
-
+        disturbances = self.disturbance_values
         # Set reference for each step in MPC horizon
+        print(disturbances[0], current_0)
         for k in range(self.N):
             #if k == 0: # only store first reference
                 #Tb_ref_history.append(Tb_ref)
@@ -249,14 +258,15 @@ class Controller:
             # y_ref_k = np.array([Tb_ref, SOC_ref, 0])
             y_ref_k = np.array([T_bat_target, 0.0, 0.0, 0.0])
             self.solver.set(k, "yref", y_ref_k)
-            self.solver.set(k, "p", current_0)
+
+            self.solver.set(k, "p", disturbances[k])
 
         # Set terminal reference
         # y_ref_terminal = np.array([Tb_ref, SOC_ref])
         y_ref_terminal = np.array([T_bat_target, 0.0]) # Terminal cost only on states so 2x1 instead of 4x1 above
         #print(y_ref_terminal)
         self.solver.set(self.N, "yref", y_ref_terminal)
-        self.solver.set(self.N, "p", current_0)
+        self.solver.set(self.N, "p", disturbances[self.N])
 
 
         start = time.time()
@@ -317,8 +327,8 @@ class Controller:
                 loss.backward() # calculates gradient
                 self.residual_optimizer.step() # one optimization step to update parameters
             for p in self.residual_mlp.parameters(): p.requires_grad = False
-            print("NO UPDATE MODEL AT", self.current_iterate)
-            #self.l4c_residual.update(self.residual_mlp)
+            print("UPDATE MODEL AT", self.current_iterate)
+            self.l4c_residual.update(self.residual_mlp)
 
         elapsed = time.time() - start
         print(omega_value, Q_heat_value, self.xt_pred[0], T_bat_0, T_bat_target)

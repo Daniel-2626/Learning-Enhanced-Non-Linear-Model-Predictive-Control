@@ -37,7 +37,7 @@
 #define BATTERY_LEARNED_NX     2
 #define BATTERY_LEARNED_NZ     0
 #define BATTERY_LEARNED_NU     2
-#define BATTERY_LEARNED_NP     1
+#define BATTERY_LEARNED_NP     2
 
 #ifdef __cplusplus
 extern "C" {

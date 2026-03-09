@@ -960,7 +960,7 @@ int battery_learned_acados_update_params(battery_learned_solver_capsule* capsule
 {
     int solver_status = 0;
 
-    int casadi_np = 1;
+    int casadi_np = 2;
     if (casadi_np != np) {
         printf("acados_update_params: trying to set %i parameters for external functions."
             " External function has %i parameters. Exiting.\n", np, casadi_np);

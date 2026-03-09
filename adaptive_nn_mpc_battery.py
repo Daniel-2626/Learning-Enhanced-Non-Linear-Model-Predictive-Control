@@ -41,6 +41,7 @@ class BatteryLearnedDynamics:
         omega = cs.MX.sym('omega') # Power into heater/cooler given as efficiency*Pin
         Q_heat = cs.MX.sym('Q_heat') # Pump control (rpm that is converted to kg/s)
         current = cs.MX.sym('current')
+        nn_on = cs.MX.sym('nn_on') # Flip switch for whether on not to have the NN in the model (helps when NN not trained yet)
         U = cs.vertcat(omega, Q_heat)
         nx = 2
         nu = 2
@@ -78,7 +79,7 @@ class BatteryLearnedDynamics:
         X_dot_residual = cs.vertcat(residual[0], residual[1]) # x1 dot and x2 dot residual
         print(X_dot_residual)
 
-        f_expl = X_dot_nominal + 0*X_dot_residual # adding x dot residual leads to some stochasticity, maybe because we have a arbitrary neural network initially?
+        f_expl = X_dot_nominal + nn_on*X_dot_residual # adding x dot residual leads to some stochasticity, maybe because we have a arbitrary neural network initially?
         x_start = np.array([-10+CELSIUS_TO_KELVIN,1]) # initial constraint (gets overwritten)
 
         # store to struct
@@ -87,7 +88,7 @@ class BatteryLearnedDynamics:
         model.xdot = cs.MX.sym('xdot', 2)
         model.u = U
         model.z = cs.vertcat([])
-        model.p = current #cs.vertcat([]) #current
+        model.p = cs.vertcat(current, nn_on) #cs.vertcat([]) #current
         model.f_expl = f_expl
         model.f_nominal = X_dot_nominal
         model.x_start = x_start
@@ -186,7 +187,7 @@ class MPC:
         ocp.solver_options.model_external_shared_lib_name = self.external_shared_lib_name 
         
         # Will be overwritten
-        ocp.parameter_values = 0
+        ocp.parameter_values = np.array([0,0])
 
         return ocp
 
@@ -205,13 +206,13 @@ class MPC:
 
 class Controller:
     def setup(self):
-        print("NO UPDATE MODEL")
+        print("UPDATE MODEL")
         # Residual MLP: Lightweight
         residual_mlp = MLP(input_dim = 2 + 2, output_dim=2, hidden_dim=64, num_layers=3) # the network
         for param in residual_mlp.parameters():
             param.requires_grad = False
         self.residual_mlp = residual_mlp
-        self.residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-3) # lr = learning rate, the optimizer
+        self.residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-5) # lr = learning rate, the optimizer
         self.residual_criterion = nn.MSELoss()
 
         l4c_residual = l4c.L4CasADi(self.residual_mlp, name="battery", mutable=True)
@@ -234,8 +235,8 @@ class Controller:
 
         # SOC_ref = None # This is not actually tracked
         self.obs_buffer = []
-        self.batch_size = self.N
-        self.T_update = self.N
+        self.batch_size = 40 #self.N
+        self.T_update = 40
         self.current_iterate = 0
         self.xt_pred = np.array([CELSIUS_TO_KELVIN, 1])
         # Reading disturbance info
@@ -248,6 +249,9 @@ class Controller:
         if self.current_iterate == 0:
             self.xt_pred = ([T_bat_0, SOC_0])
         disturbances = self.disturbance_values
+
+        switch = self.current_iterate > self.T_update
+
         # Set reference for each step in MPC horizon
         print(disturbances[0], current_0)
         for k in range(self.N):
@@ -258,15 +262,17 @@ class Controller:
             # y_ref_k = np.array([Tb_ref, SOC_ref, 0])
             y_ref_k = np.array([T_bat_target, 0.0, 0.0, 0.0])
             self.solver.set(k, "yref", y_ref_k)
-
-            self.solver.set(k, "p", disturbances[k])
+            param_values = np.array([disturbances[k].item(),switch])
+            self.solver.set(k, "p", param_values)
 
         # Set terminal reference
         # y_ref_terminal = np.array([Tb_ref, SOC_ref])
         y_ref_terminal = np.array([T_bat_target, 0.0]) # Terminal cost only on states so 2x1 instead of 4x1 above
         #print(y_ref_terminal)
         self.solver.set(self.N, "yref", y_ref_terminal)
-        self.solver.set(self.N, "p", disturbances[self.N])
+        param_values = np.array([disturbances[self.N].item(),switch])
+
+        self.solver.set(self.N, "p", param_values)
 
 
         start = time.time()
@@ -296,7 +302,7 @@ class Controller:
         self.xt_pred = np.array([pred[0].item(), pred[1].item()])
      
         
-        # update every 50 time steps
+        # update every 40 time steps
         if self.current_iterate > 0 and (self.current_iterate % self.T_update) == 0 and len(self.obs_buffer) >= self.batch_size:
             data = np.array(self.obs_buffer[-self.batch_size:])
             # data[:, :3] h1, h2 and u
@@ -327,7 +333,7 @@ class Controller:
                 loss.backward() # calculates gradient
                 self.residual_optimizer.step() # one optimization step to update parameters
             for p in self.residual_mlp.parameters(): p.requires_grad = False
-            print("NO UPDATE MODEL AT", self.current_iterate)
+            print("UPDATE MODEL AT", self.current_iterate)
             self.l4c_residual.update(self.residual_mlp)
 
         elapsed = time.time() - start

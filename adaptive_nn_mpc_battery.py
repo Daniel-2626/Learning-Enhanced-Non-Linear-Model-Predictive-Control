@@ -205,7 +205,7 @@ class MPC:
 
 class Controller:
     def setup(self):
-       
+        print("NO UPDATE MODEL")
         # Residual MLP: Lightweight
         residual_mlp = MLP(input_dim = 2 + 2, output_dim=2, hidden_dim=64, num_layers=3) # the network
         for param in residual_mlp.parameters():
@@ -327,7 +327,7 @@ class Controller:
                 loss.backward() # calculates gradient
                 self.residual_optimizer.step() # one optimization step to update parameters
             for p in self.residual_mlp.parameters(): p.requires_grad = False
-            print("UPDATE MODEL AT", self.current_iterate)
+            print("NO UPDATE MODEL AT", self.current_iterate)
             self.l4c_residual.update(self.residual_mlp)
 
         elapsed = time.time() - start

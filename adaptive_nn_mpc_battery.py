@@ -79,12 +79,12 @@ class BatteryLearnedDynamics:
         X_dot_residual = cs.vertcat(residual[0], residual[1]) # x1 dot and x2 dot residual
         print(X_dot_residual)
 
-        f_expl = X_dot_nominal + nn_on*X_dot_residual # adding x dot residual leads to some stochasticity, maybe because we have a arbitrary neural network initially?
+        f_expl = X_dot_nominal  + nn_on*X_dot_residual# adding x dot residual leads to some stochasticity, maybe because we have a arbitrary neural network initially?
         x_start = np.array([-10+CELSIUS_TO_KELVIN,1]) # initial constraint (gets overwritten)
 
         # store to struct
         model = cs.types.SimpleNamespace()
-        model.x = X
+        model.x = X 
         model.xdot = cs.MX.sym('xdot', 2)
         model.u = U
         model.z = cs.vertcat([])
@@ -234,11 +234,17 @@ class Controller:
         
 
         # SOC_ref = None # This is not actually tracked
+        self.dt = t_horizon/self.N
         self.obs_buffer = []
-        self.batch_size = 40 #self.N
-        self.T_update = 40
+        self.batch_size = self.N
+        self.T_update = 60
         self.current_iterate = 0
         self.xt_pred = np.array([CELSIUS_TO_KELVIN, 1])
+        self.x_last = np.array([0,0])
+        self.omega_last = 0
+        self.Q_heat_last = 0
+        self.current_last = 0
+        self.data = []
         # Reading disturbance info
         df = pd.read_csv("current_intp1.csv", names=["current"])
         arr = df.to_numpy(dtype=np.float32)
@@ -277,7 +283,6 @@ class Controller:
 
         start = time.time()
         xt = np.array([T_bat_0,SOC_0])
-      
         # Apply current state as constraint
         self.solver.set(0, "lbx", xt)
         self.solver.set(0, "ubx", xt)
@@ -288,10 +293,45 @@ class Controller:
         ut = self.solver.get(0, "u")
         omega_value = ut[0].item()
         Q_heat_value = ut[1].item()
+
         u_N = self.solver.get(10,'u')
         print('slacking off input', u_N)
-        
-        self.obs_buffer.append((xt[0], xt[1], omega_value, Q_heat_value, self.xt_pred[0], self.xt_pred[1]))
+        if self.current_iterate  > 0:
+            dT_bat = (xt[0] - self.x_last[0])/self.dt
+            d_SOC = (xt[1] - self.x_last[1])/self.dt
+            
+            # Parameters
+            m_battery = 20*2.5*4
+            c_battery = 795
+            c_coolant = 3500
+            density_coolant = 1050
+            pump_displacement = 1/(2*np.pi)*40/(100**3) # D parameter in simulink
+            R_battery = 4*20*0.0128 # Battery resistance
+            C_battery = 28*3600 # in coloumb
+            hA_bat = 2500
+            alpha = 0.65
+            kappa = 1e-4
+            mdot_c_last = density_coolant*pump_displacement*self.omega_last
+            
+            # Dynamics
+            
+            # Get the cooler in and out temps
+            #NTU_bat  = (alpha_out*hb*Ab) / (u2*c_clin + 1e-3)
+            #T_clin= Tb + 1/(1-np.exp(-NTU_bat))*u1/(u2*c_clin + 1e-3)
+            #T_clout = (T_clin - Tb) * np.exp(-NTU_bat) + Tb
+            #Q_cool = u2*c_clin*(T_clout - T_clin)
+            print(dT_bat, d_SOC)
+            # Now for the actual calculations 
+            T_bat_dot_model = alpha/(m_battery*c_battery) * (self.current_last**2 * R_battery + mdot_c_last* kappa * self.Q_heat_last)
+            SOC_dot_model = -self.current_last/C_battery
+            print(T_bat_dot_model, SOC_dot_model)
+
+            self.obs_buffer.append((dT_bat, d_SOC, T_bat_dot_model, SOC_dot_model))
+            self.data.append((self.x_last[0], self.x_last[1], self.omega_last, self.Q_heat_last))
+
+        else:
+            self.obs_buffer.append((0, 0, 0, 0))
+            self.data = [(0,0,0,0)]
         # sl = solver.get(1, "sl")
         # su = solver.get(1, "su")
         # print(sl,su)
@@ -300,21 +340,25 @@ class Controller:
         # So delay update of xt pred
         pred = self.solver.get(1, 'x')
         self.xt_pred = np.array([pred[0].item(), pred[1].item()])
-     
-        
+        self.x_last = xt
+        self.omega_last = omega_value
+        self.Q_heat_last = Q_heat_value
+        self.current_last = current_0
+
         # update every 40 time steps
         if self.current_iterate > 0 and (self.current_iterate % self.T_update) == 0 and len(self.obs_buffer) >= self.batch_size:
-            data = np.array(self.obs_buffer[-self.batch_size:])
+            data = np.array(self.data[-self.batch_size:])
+            obs = np.array(self.obs_buffer)
             # data[:, :3] h1, h2 and u
-            X_batch = torch.tensor(data[:, :4], dtype=torch.float32)
+            X_batch = torch.tensor(data[:, :], dtype=torch.float32)
             # h1_dot, h2_dot
             #print(data[-1])
-            y_true = data[:, :2]
+            y_true = obs[-self.batch_size:, :2]
             #print(y_true)
         
             
 
-            y_nominal = data[:, -2:]
+            y_nominal = obs[-self.batch_size:, 2:]
             #y_true = np.array([f(x[:2], x[3]).full().flatten() for x in data])
             #y_nominal = nominal[:, :] # dx2 and dx4 from nominal model
             #print(y_nominal.shape)

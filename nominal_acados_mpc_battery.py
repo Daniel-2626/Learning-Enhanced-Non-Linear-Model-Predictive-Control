@@ -17,22 +17,9 @@ import csv
 np.random.seed(42)
 CELSIUS_TO_KELVIN = 273.15
 
-class MLP(nn.Module):
-    def __init__(self, input_dim=2, output_dim=1, hidden_dim=128, num_layers=3):
-        super(MLP, self).__init__()
-        layers = [nn.Linear(input_dim, hidden_dim), nn.ReLU()] # nn.ReLU rectified linear function (max(x,0))
-        for _ in range(num_layers - 1):
-            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU()]) # nn.Linear applies an affine transform. hidden_dim features and hidden_dim out features
-        layers.append(nn.Linear(hidden_dim, output_dim))
-        self.net = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.net(x)
-
-class BatteryLearnedDynamics:
-    def __init__(self, residual_model): # remove gym_env for cascaded tank
-        self.residual_model = residual_model # Residual model is L4Casadi residual
-    
+class BatteryDynamics:
+    def __init__(self): # remove gym_env for cascaded tank
+        pass #
     def model(self): # remove gym_env for cascaded tank
 
         T_bat = cs.MX.sym('Tb')
@@ -70,15 +57,11 @@ class BatteryLearnedDynamics:
         #Q_cool = u2*c_clin*(T_clout - T_clin)
 
         # Now for the actual calculations 
-        T_bat_dot_model = alpha/(m_battery*c_battery) * (current**2 * R_battery + mdot_c * kappa * Q_heat)
+        T_bat_dot_model = alpha/(m_battery*c_battery) * (current**2 * R_battery + mdot_c * 1 * kappa * Q_heat)
         SOC_dot_model = -current/C_battery
         X_dot_nominal = cs.vertcat(T_bat_dot_model, SOC_dot_model)
 
-        mlp_input = cs.vertcat(X, U)
-        residual = self.residual_model(mlp_input.T).T 
-        X_dot_residual = cs.vertcat(residual[0], residual[1]) # x1 dot and x2 dot residual
-
-        f_expl = X_dot_nominal + nn_on*X_dot_residual# adding x dot residual leads to some stochasticity, maybe because we have a arbitrary neural network initially?
+        f_expl = X_dot_nominal 
         x_start = np.array([-10+CELSIUS_TO_KELVIN,1]) # initial constraint (gets overwritten)
 
         # store to struct
@@ -87,22 +70,20 @@ class BatteryLearnedDynamics:
         model.xdot = cs.MX.sym('xdot', 2)
         model.u = U
         model.z = cs.vertcat([])
-        model.p = cs.vertcat(current, nn_on) #cs.vertcat([]) #current
+        model.p = current
         model.f_expl = f_expl
         model.f_nominal = X_dot_nominal
         model.x_start = x_start
         model.constraints = cs.vertcat([]) # add constraints here or in mpc?
-        model.name = "battery_learned"
+        model.name = "battery_nominal"
         
         return model 
 
 class MPC:
-    def __init__(self, model, N, t_horizon, external_shared_lib_dir, external_shared_lib_name):
+    def __init__(self, model, N, t_horizon):
         self.model = model
         self.N = N
         self.t_horizon = t_horizon
-        self.external_shared_lib_dir = external_shared_lib_dir
-        self.external_shared_lib_name = external_shared_lib_name
 
     @property # a decorator
     def solver(self):
@@ -182,11 +163,9 @@ class MPC:
         ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
         ocp.solver_options.integrator_type = "ERK"
         ocp.solver_options.nlp_solver_type = "SQP_RTI"
-        ocp.solver_options.model_external_shared_lib_dir = self.external_shared_lib_dir
-        ocp.solver_options.model_external_shared_lib_name = self.external_shared_lib_name 
         
         # Will be overwritten
-        ocp.parameter_values = np.array([0,0])
+        ocp.parameter_values = 0
 
         return ocp
 
@@ -205,28 +184,16 @@ class MPC:
 
 class Controller:
     def setup(self, T_bat_target):
-        # Residual MLP: Lightweight
-        residual_mlp = MLP(input_dim = 2 + 2, output_dim=2, hidden_dim=64, num_layers=3) # the network
-        for param in residual_mlp.parameters():
-            param.requires_grad = False
-        self.residual_mlp = residual_mlp
-        self.residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-5) # lr = learning rate, the optimizer
-        self.residual_criterion = nn.MSELoss()
 
-        l4c_residual = l4c.L4CasADi(self.residual_mlp, name="battery", mutable=True)
-        self.l4c_residual = l4c_residual
-        
         # MPC Setup 
         self.N = 40
         t_horizon = 40
-        learned_model = BatteryLearnedDynamics(l4c_residual)
+        model = BatteryDynamics()
       
-        casadi_model = learned_model.model()
+        casadi_model = model.model()
 
         
-        self.solver = MPC(model=learned_model.model(), N=self.N, t_horizon = t_horizon,
-                    external_shared_lib_dir=l4c_residual.shared_lib_dir,
-                    external_shared_lib_name=l4c_residual.name).solver # Returns the solver object from MPC
+        self.solver = MPC(model=model.model(), N=self.N, t_horizon = t_horizon).solver # Returns the solver object from MPC
 
          
         
@@ -253,13 +220,12 @@ class Controller:
         
 
     def get_input(self, T_bat_target, T_bat_0, SOC_0, current_0, dT_bat, dSOC):
+       
         print("--------------------------------")
-        print("ADAPTIVE MPC")
+        print("NOMINAL ACADOS MPC BATTERY MODEL")
         if self.current_iterate == 0:
             self.xt_pred = ([T_bat_0, SOC_0])
         disturbances = self.disturbance_values
-
-        switch = self.current_iterate > self.T_update
 
         # Set reference for each step in MPC horizon
         #print(disturbances[0], current_0)
@@ -271,7 +237,7 @@ class Controller:
             # y_ref_k = np.array([Tb_ref, SOC_ref, 0])
             y_ref_k = np.array([T_bat_target, 0.0, 0.0, 0.0])
             self.solver.set(k, "yref", y_ref_k)
-            param_values = np.array([disturbances[k].item(),switch])
+            param_values = disturbances[k].item()
             self.solver.set(k, "p", param_values)
 
         # Set terminal reference
@@ -279,7 +245,7 @@ class Controller:
         y_ref_terminal = np.array([T_bat_target, 0.0]) # Terminal cost only on states so 2x1 instead of 4x1 above
         #print(y_ref_terminal)
         self.solver.set(self.N, "yref", y_ref_terminal)
-        param_values = np.array([disturbances[self.N].item(),switch])
+        param_values = disturbances[self.N].item()
 
         self.solver.set(self.N, "p", param_values)
 
@@ -303,46 +269,6 @@ class Controller:
             self.total_errors += 1
         #u_N = self.solver.get(10,'u')
         #print('slacking off input', u_N)
-        dT_bat = 0
-        if self.current_iterate  > 0:
-            #dT_bat = (xt[0] - self.x_last[0])/self.dt
-            #dSOC = (xt[1] - self.x_last[1])/self.dt
-            
-            # Parameters
-            m_battery = 20*2.5*4
-            c_battery = 795
-            c_coolant = 3500
-            density_coolant = 1050
-            pump_displacement = 1/(2*np.pi)*40/(100**3) # D parameter in simulink
-            R_battery = 4*20*0.0128 # Battery resistance
-            C_battery = 28*3600 # in coloumb
-            hA_bat = 2500
-            alpha = 0.65
-            kappa = 1e-4
-            mdot_c = density_coolant*pump_displacement*omega_value
-            
-            # Dynamics
-            
-            # Get the cooler in and out temps
-            #NTU_bat  = (alpha_out*hb*Ab) / (u2*c_clin + 1e-3)
-            #T_clin= Tb + 1/(1-np.exp(-NTU_bat))*u1/(u2*c_clin + 1e-3)
-            #T_clout = (T_clin - Tb) * np.exp(-NTU_bat) + Tb
-            #Q_cool = u2*c_clin*(T_clout - T_clin)
-            #print(dT_bat, d_SOC)
-            # Now for the actual calculations 
-            T_bat_dot_model = alpha/(m_battery*c_battery) * (current_0**2 * R_battery + mdot_c* kappa *c_coolant * Q_heat_value)
-            SOC_dot_model = -current_0/C_battery
-            #print(T_bat_dot_model, SOC_dot_model)
-
-            self.obs_buffer.append((dT_bat, dSOC, T_bat_dot_model, SOC_dot_model))
-            self.data.append((T_bat_0, SOC_0, omega_value, Q_heat_value))
-
-        else:
-            self.obs_buffer.append((0, 0, 0, 0))
-            self.data = [(0,0,0,0)]
-        # sl = solver.get(1, "sl")
-        # su = solver.get(1, "su")
-        # print(sl,su)
         
         # Want to compare prediction at time step 0 with value at time step 1
         # So delay update of xt pred
@@ -353,46 +279,11 @@ class Controller:
         self.Q_heat_last = Q_heat_value
         self.current_last = current_0
 
-        # update every 40 time steps
-        if self.current_iterate > self.T_warm_start and (self.current_iterate % self.T_update) == 0 and len(self.obs_buffer) >= self.batch_size:
-            data = np.array(self.data[-self.batch_size:])
-            obs = np.array(self.obs_buffer)
-            # data[:, :3] h1, h2 and u
-            X_batch = torch.tensor(data[:, :], dtype=torch.float32)
-            # h1_dot, h2_dot
-            #print(data[-1])
-            y_true = obs[-self.batch_size:, :2]
-            #print(y_true)
-        
-            
-
-            y_nominal = obs[-self.batch_size:, 2:]
-            #y_true = np.array([f(x[:2], x[3]).full().flatten() for x in data])
-            #y_nominal = nominal[:, :] # dx2 and dx4 from nominal model
-            #print(y_nominal.shape)
-            #print(y_nominal)
-            #print(y_true.shape)
-            #print(y_true)
-            #print(y_true - y_nominal)
-            #stop
-            y_target = torch.tensor(y_true - y_nominal, dtype=torch.float32)
-
-            for p in self.residual_mlp.parameters(): p.requires_grad = True
-            for _ in range(50):
-                self.residual_optimizer.zero_grad() # optimizer object
-                prediction = self.residual_mlp(X_batch) # gives data to network to make a prediction
-                loss = self.residual_criterion(prediction, y_target)
-                loss.backward() # calculates gradient
-                self.residual_optimizer.step() # one optimization step to update parameters
-            for p in self.residual_mlp.parameters(): p.requires_grad = False
-            print("UPDATE MODEL AT", self.current_iterate)
-            print("REMEMBER SWITCH")
-            self.l4c_residual.update(self.residual_mlp)
-
+ 
         elapsed = time.time() - start
         
         print("total errors", self.total_errors)
-        
+    
         self.current_iterate += 1
         if self.current_iterate < self.T_warm_start:
             omega_value, Q_heat_value = 4000*2*np.pi/60, 4000

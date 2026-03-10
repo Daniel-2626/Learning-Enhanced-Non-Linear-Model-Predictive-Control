@@ -3,8 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from time import time
 import pandas as pd
-class Model_Predictive_Controller:
-    def MPC_setup(self, T_bat_target):
+class Controller:
+    def setup(self, T_bat_target):
 
         ## CONFIG
         # MPC setup
@@ -182,7 +182,7 @@ class Model_Predictive_Controller:
     def DM2Arr(self,dm):
     # returns a full matrix instead if a sparse one
         return np.array(dm.full())
-    def MPC_step(self, T_bat_0, SOC_0, current):
+    def get_input(self, T_bat_target, T_bat_0, SOC_0, current_0):
         start = time()
         state_init = ca.DM([T_bat_0, SOC_0])
         state_target = self.state_target
@@ -197,7 +197,7 @@ class Model_Predictive_Controller:
         args['p'] = ca.vertcat(
             state_init, # current state
             state_target,
-            current 
+            current_0 
         )
 
         # optimization variable current state

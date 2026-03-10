@@ -18,7 +18,7 @@
             "/home/lechkula/Documents/Thesis/L4CasADi/.venv/lib/python3.12/site-packages/numpy/_core/include",
             "/usr/include/python3.12"
         ],
-        "json_file": "battery_learned_ocp.json",
+        "json_file": "battery_nominal_ocp.json",
         "os": "unix",
         "shared_lib_ext": ".so"
     },
@@ -349,7 +349,7 @@
         "nh": 0,
         "nh_0": 0,
         "nh_e": 0,
-        "np": 2,
+        "np": 1,
         "np_global": 0,
         "nphi": 0,
         "nphi_0": 0,
@@ -380,12 +380,12 @@
         "nz": 0
     },
     "external_function_files_model": [
-        "battery_learned_model/battery_learned_expl_ode_fun.c",
-        "battery_learned_model/battery_learned_expl_vde_forw.c",
-        "battery_learned_model/battery_learned_expl_vde_adj.c"
+        "battery_nominal_model/battery_nominal_expl_ode_fun.c",
+        "battery_nominal_model/battery_nominal_expl_vde_forw.c",
+        "battery_nominal_model/battery_nominal_expl_vde_adj.c"
     ],
     "external_function_files_ocp": [],
-    "hash": "2593cc3f0eaf957b3389d74d226f3878",
+    "hash": "b0774d231ad3b400c5ee058be0cd6f7e",
     "model": {
         "con_h_expr": [],
         "con_h_expr_0": [],
@@ -439,15 +439,15 @@
             "xdot",
             "z"
         ],
-        "f_expl_expr": "MX(@1=battery(vertcat(Tb, SOC, omega, Q_heat)'){0}', (vertcat((4.08805e-06*((1.024*sq(current))+((0.0001*(0.00668451*omega))*Q_heat))), (-(current/100800)))+(nn_on*vertcat(@1[0], @1[1]))))",
-        "f_impl_expr": "MX(@1=battery(vertcat(Tb, SOC, omega, Q_heat)'){0}', (xdot-(vertcat((4.08805e-06*((1.024*sq(current))+((0.0001*(0.00668451*omega))*Q_heat))), (-(current/100800)))+(nn_on*vertcat(@1[0], @1[1])))))",
+        "f_expl_expr": "MX(vertcat((4.08805e-06*((1.024*sq(current))+((0.0001*(0.00668451*omega))*Q_heat))), (-(current/100800))))",
+        "f_impl_expr": "MX((xdot-vertcat((4.08805e-06*((1.024*sq(current))+((0.0001*(0.00668451*omega))*Q_heat))), (-(current/100800)))))",
         "gnsf_model": null,
-        "name": "battery_learned",
+        "name": "battery_nominal",
         "nu_original": null,
-        "p": "MX(vertcat(current, nn_on))",
+        "p": "MX(current)",
         "p_global": "MX(0x1)",
         "pi": "MX(pi)",
-        "serialized_expressions": "jhpnnagiieahaaaadaaaaaaaaaaaaaaaaaebpbaaaaaaaaaaaaaaegmcaaaaaaeeanhjdmglcifcbnodaaaaaaaaaaaaaaaaegfaaaaaaaaaaaaaaabaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaegmcaaaaaaeempjkbpcnnecgappdaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaahaaaaaaadgfhchchfgogeheglaaaaaaabaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaalaaaaaaaegdaaaaaaacacaaaaaaaaaaaaaaachcaaaaaaaaaaaaaaacheaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegmcaaaaaaeencdemblocogdkbpdaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegmcaaaaaaeegpgppcjngdbglhpdaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaafaaaaaaapgngfghgbgegdaaaaaaabacaaaaaaaaaaaaaaachhaaaaaaaaaaaaaaachiaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegdaaaaaaacacaaaaaaaaaaaaaaachgaaaaaaaaaaaaaaachjaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaagaaaaaaabfpfigfgbgehegdaaaaaaabacaaaaaaaaaaaaaaachkaaaaaaaaaaaaaaachlaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegbaaaaaaabacaaaaaaaaaaaaaaachfaaaaaaaaaaaaaaachmaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaabaaaaaaaegdaaaaaaabacaaaaaaaaaaaaaaachbaaaaaaaaaaaaaaachnaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegmcaaaaaajeamjibaaaaaaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegeaaaaaaabacaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaachpaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaeaaaaaaaegfaaaaaaabaaaaaaaaaaaaaaachabaaaaaaaaaaaaaachaaaaaaaaaaaaaaaafaaaaaaaegndaaaaaacaaaaaaaaaaaaaaachoaaaaaaaaaaaaaaachbbaaaaaaaaaaaaaaeggaaaaaaaaaaaaaaacaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaafaaaaaaaogogpfpgogegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaacaaaaaaaefcgegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaadfpedeegndaaaaaaeaaaaaaaaaaaaaaachfbaaaaaaaaaaaaaachgbaaaaaaaaaaaaaachiaaaaaaaaaaaaaaachlaaaaaaaaaaaaaaaegiaaaaaaaaaaaaaaaeaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaacaaaaaaaaaaaaaaadaaaaaaaaaaaaaaaegceaaaaaabaaaaaaaaaaaaaaachibaaaaaaaaaaaaaaeglaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaacaaaaaaaaaaaaaaadaaaaaaaaaaaaaaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaegadaaaaaabaaaaaaaaaaaaaaachkbaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegaaiaaaaaaafeihehfgchogbgmgbaaaaaaahgcaaaaaaahaaaaaaacgbgehehfgchjhaaaaaaaabahaaaaaaabaaaaaaaaaaaaaaababaaaaaaaaaaaaaaababaaaaaaaaaaaaaaachjbaaaaaaaaaaaaaabaaaaaaaaaaaaaaaeghaaaaaaaaaaaaaaabaaaaaaaaaaaaaaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaacaaaaaaajgadbaaaaaaaaaaaaaaacaaaaaaapgadaabagaaaaaaadhpgfhchdgfgbahaaaaaaakgjgehpfehngahaaaaaaaaaaaaaaaafaaaaaaadhigfgmgmgaaaaaaaaaaaaaaaaaaegbaaaaaaaaaaaaaaaaeaababaaabababaaapbfilobfilobfnpdmfpicmfpicmfpnpdaaaaaeaaaaaaaaaaaaaabakdmiadcooijhfeodaaaaaaaaaaaaaaabhcaaaaaaaaaaaaaaaabaaaaaaaocdaaaaaaangehihaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaachmbaaaaaaaaaaaaaabaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaegkaaaaaaaeemgmgmejgcgchbgchjhbaaaaaaambaaaaaapfmgeddgpfhgfgogfgchbgehfgegpcmgjgcgcgbgehehfgchjhocdhpgaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaegppppppppbaaaaaaaaaaaaaaachpbaaaaaaaaaaaaaachlbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaegceaaaaaabaaaaaaaaaaaaaaachacaaaaaaaaaaaaaachcbaaaaaaaaaaaaaaegfeaaaaaacgbaaaaaaaaaaaaaaachbcaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaegfeaaaaaacgbaaaaaaaaaaaaaaachbcaaaaaaaaaaaaaachaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaacaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaegndaaaaaacaaaaaaaaaaaaaaachccaaaaaaaaaaaaaachdcaaaaaaaaaaaaaachcbaaaaaaaaaaaaaaegdaaaaaaabacaaaaaaaaaaaaaaachebaaaaaaaaaaaaaachecaaaaaaaaaaaaaachcbaaaaaaaaaaaaaadaaaaaaaegbaaaaaaaaacaaaaaaaaaaaaaaachdbaaaaaaaaaaaaaachfcaaaaaaaaaaaaaachcbaaaaaaaaaaaaaabaaaaaaachgcaaaaaaaaaaaaaaebbcaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachcbaaaaaaaaaaaaaaeaaaaaaaihegpgehchbaaaaaaaaaaaaaaachcaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaacheaaaaaaaaaaaaaaachfaaaaaaaaaaaaaaachgaaaaaaaaaaaaaaachhaaaaaaaaaaaaaaachiaaaaaaaaaaaaaaachjaaaaaaaaaaaaaaachkaaaaaaaaaaaaaaachlaaaaaaaaaaaaaaachmaaaaaaaaaaaaaaachnaaaaaaaaaaaaaaachoaaaaaaaaaaaaaaachpaaaaaaaaaaaaaaachabaaaaaaaaaaaaaachbbaaaaaaaaaaaaaachdbaaaaaaaaaaaaaachebaaaaaaaaaaaaaachfbaaaaaaaaaaaaaachgbaaaaaaaaaaaaaachibaaaaaaaaaaaaaachkbaaaaaaaaaaaaaachpbaaaaaaaaaaaaaachacaaaaaaaaaaaaaachbcaaaaaaaaaaaaaachccaaaaaaaaaaaaaachdcaaaaaaaaaaaaaachecaaaaaaaaaaaaaachfcaaaaaaaaaaaaaachgcaaaaaaaaaaaaaaegcaaaaaaaaacaaaaaaaaaaaaaaachhcaaaaaaaaaaaaaachgcaaaaaaaaaaaaaachcbaaaaaaaaaaaaaacaaaaaaachicaaaaaaaaaaaaaaebcaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaachebaaaaaaaaaaaaaaegndaaaaaacaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaachebaaaaaaaaaaaaaachcbaaaaaaaaaaaaaaebaaaaaaaaaaaaaaaaegmcaaaaaaadaaaaaaaaaaaaaaaaegeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaebbaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachcbaaaaaaaaaaaaaacaaaaaaaahjgchmcaaaaaaaaaaaaaaebcaaaaaaaaaaaaaaachiaaaaaaaaaaaaaaachlaaaaaaaaaaaaaaaegndaaaaaacaaaaaaaaaaaaaaachiaaaaaaaaaaaaaaachlaaaaaaaaaaaaaaachcbaaaaaaaaaaaaaaebcaaaaaaaaaaaaaaachfbaaaaaaaaaaaaaachgbaaaaaaaaaaaaaaegndaaaaaacaaaaaaaaaaaaaaachfbaaaaaaaaaaaaaachgbaaaaaaaaaaaaaachcbaaaaaaaaaaaaaaebbaaaaaaaaaaaaaaachhcaaaaaaaaaaaaaachhcaaaaaaaaaaaaaaebaaaaaaaaaaaaaaaaegmcaaaaaaadaaaaaaaaaaaaaaaachkcaaaaaaaaaaaaaa",
+        "serialized_expressions": "jhpnnagiieahaaaadaaaaaaaaaaaaaaaaaebbbaaaaaaaaaaaaaaegmcaaaaaaeeanhjdmglcifcbnodaaaaaaaaaaaaaaaaegfaaaaaaaaaaaaaaabaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaegmcaaaaaaeempjkbpcnnecgappdaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaahaaaaaaadgfhchchfgogeheglaaaaaaabaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaalaaaaaaaegdaaaaaaacacaaaaaaaaaaaaaaachcaaaaaaaaaaaaaaacheaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegmcaaaaaaeencdemblocogdkbpdaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegmcaaaaaaeegpgppcjngdbglhpdaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaafaaaaaaapgngfghgbgegdaaaaaaabacaaaaaaaaaaaaaaachhaaaaaaaaaaaaaaachiaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegdaaaaaaacacaaaaaaaaaaaaaaachgaaaaaaaaaaaaaaachjaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaagaaaaaaabfpfigfgbgehegdaaaaaaabacaaaaaaaaaaaaaaachkaaaaaaaaaaaaaaachlaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegbaaaaaaabacaaaaaaaaaaaaaaachfaaaaaaaaaaaaaaachmaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaabaaaaaaaegdaaaaaaabacaaaaaaaaaaaaaaachbaaaaaaaaaaaaaaachnaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegmcaaaaaajeamjibaaaaaaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegeaaaaaaabacaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaachpaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaeaaaaaaaegfaaaaaaabaaaaaaaaaaaaaaachabaaaaaaaaaaaaaachaaaaaaaaaaaaaaaafaaaaaaaegndaaaaaacaaaaaaaaaaaaaaachoaaaaaaaaaaaaaaachbbaaaaaaaaaaaaaaeggaaaaaaaaaaaaaaacaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaebebaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachcbaaaaaaaaaaaaaaeaaaaaaaihegpgehchbaaaaaaaaaaaaaaachcaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaacheaaaaaaaaaaaaaaachfaaaaaaaaaaaaaaachgaaaaaaaaaaaaaaachhaaaaaaaaaaaaaaachiaaaaaaaaaaaaaaachjaaaaaaaaaaaaaaachkaaaaaaaaaaaaaaachlaaaaaaaaaaaaaaachmaaaaaaaaaaaaaaachnaaaaaaaaaaaaaaachoaaaaaaaaaaaaaaachpaaaaaaaaaaaaaaachabaaaaaaaaaaaaaachbbaaaaaaaaaaaaaachdbaaaaaaaaaaaaaaegcaaaaaaaaacaaaaaaaaaaaaaaachebaaaaaaaaaaaaaachdbaaaaaaaaaaaaaachcbaaaaaaaaaaaaaacaaaaaaachfbaaaaaaaaaaaaaaebbaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaaebaaaaaaaaaaaaaaaaegmcaaaaaaadaaaaaaaaaaaaaaaaegeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaebbaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachcbaaaaaaaaaaaaaacaaaaaaaahjgchibaaaaaaaaaaaaaaebcaaaaaaaaaaaaaaachiaaaaaaaaaaaaaaachlaaaaaaaaaaaaaaaegndaaaaaacaaaaaaaaaaaaaaachiaaaaaaaaaaaaaaachlaaaaaaaaaaaaaaachcbaaaaaaaaaaaaaaebcaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaacaaaaaaaefcgegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaadfpedeegndaaaaaacaaaaaaaaaaaaaaachkbaaaaaaaaaaaaaachlbaaaaaaaaaaaaaachcbaaaaaaaaaaaaaaebbaaaaaaaaaaaaaaachebaaaaaaaaaaaaaachebaaaaaaaaaaaaaaebaaaaaaaaaaaaaaaaegmcaaaaaaadaaaaaaaaaaaaaaaachgbaaaaaaaaaaaaaa",
         "t": [],
         "t0": null,
         "t_label": "t",
@@ -464,10 +464,9 @@
         "xdot": "MX(xdot)",
         "z": "MX(0x1)"
     },
-    "name": "battery_learned",
+    "name": "battery_nominal",
     "p_global_values": [],
     "parameter_values": [
-        0,
         0
     ],
     "problem_class": "OCP",
@@ -566,8 +565,8 @@
         "levenberg_marquardt": 0.0,
         "log_dual_step_norm": false,
         "log_primal_step_norm": false,
-        "model_external_shared_lib_dir": "/home/lechkula/Documents/Thesis/L4CasADi/Learning-Enhanced-Non-Linear-Model-Predictive-Control/_l4c_generated",
-        "model_external_shared_lib_name": "battery",
+        "model_external_shared_lib_dir": null,
+        "model_external_shared_lib_name": null,
         "nlp_qp_tol_min_comp": 1e-11,
         "nlp_qp_tol_min_eq": 1e-10,
         "nlp_qp_tol_min_ineq": 1e-10,

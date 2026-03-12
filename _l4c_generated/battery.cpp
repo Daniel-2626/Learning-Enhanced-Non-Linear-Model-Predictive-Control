@@ -1,6 +1,6 @@
 #include <l4casadi.hpp>
 
-L4CasADi l4casadi("/home/lechkula/Documents/Thesis/L4CasADi/Learning-Enhanced-Non-Linear-Model-Predictive-Control/_l4c_generated", "battery", 1, 4, 1, 2, "cpu", true, true, true, false, true, true);
+L4CasADi l4casadi("/home/daniel/thesis/_l4c_generated", "battery", 1, 4, 1, 2, "cpu", true, true, true, false, true, true);
 
 #ifdef __cplusplus
 extern "C" {

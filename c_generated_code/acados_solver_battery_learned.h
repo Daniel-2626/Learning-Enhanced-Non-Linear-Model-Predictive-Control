@@ -39,7 +39,7 @@
 #define BATTERY_LEARNED_NX     2
 #define BATTERY_LEARNED_NZ     0
 #define BATTERY_LEARNED_NU     2
-#define BATTERY_LEARNED_NP     1
+#define BATTERY_LEARNED_NP     2
 #define BATTERY_LEARNED_NP_GLOBAL     0
 #define BATTERY_LEARNED_NBX    1
 #define BATTERY_LEARNED_NBX0   2
@@ -65,7 +65,7 @@
 #define BATTERY_LEARNED_NY     4
 #define BATTERY_LEARNED_NYN    2
 #define BATTERY_LEARNED_N      40
-#define BATTERY_LEARNED_NH     0
+#define BATTERY_LEARNED_NH     2
 #define BATTERY_LEARNED_NHN    0
 #define BATTERY_LEARNED_NH0    0
 #define BATTERY_LEARNED_NPHI0  0
@@ -114,6 +114,10 @@ typedef struct battery_learned_solver_capsule
 
 
     // constraints
+    external_function_external_param_casadi *nl_constr_h_fun_jac;
+    external_function_external_param_casadi *nl_constr_h_fun;
+
+
 
 
 

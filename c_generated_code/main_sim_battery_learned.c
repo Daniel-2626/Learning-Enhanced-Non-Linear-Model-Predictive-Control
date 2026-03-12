@@ -80,6 +80,7 @@ int main()
     // set parameters
     double p[NP];
     p[0] = 0;
+    p[1] = 0;
 
     battery_learned_acados_sim_update_params(capsule, p, NP);
   

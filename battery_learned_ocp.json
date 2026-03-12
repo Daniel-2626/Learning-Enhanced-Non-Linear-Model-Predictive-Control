@@ -1,21 +1,21 @@
 {
     "code_gen_opts": {
-        "acados_include_path": "/home/lechkula/Documents/Thesis/ACADOS/acados/include",
-        "acados_lib_path": "/home/lechkula/Documents/Thesis/ACADOS/acados/lib",
+        "acados_include_path": "/home/daniel/acados/include",
+        "acados_lib_path": "/home/daniel/acados/lib",
         "acados_link_libs": {
             "clarabel": "",
             "daqp": "",
             "hpmpc": "",
             "ooqp": "",
             "openmp": "",
-            "osqp": "",
+            "osqp": "-losqp",
             "qpdunes": "",
             "qpoases": "-lqpOASES_e"
         },
-        "acados_version": "6111f01f2",
-        "code_export_directory": "/home/lechkula/Documents/Thesis/L4CasADi/Learning-Enhanced-Non-Linear-Model-Predictive-Control/c_generated_code",
+        "acados_version": "169de0108",
+        "code_export_directory": "/home/daniel/thesis/c_generated_code",
         "cython_include_dirs": [
-            "/home/lechkula/Documents/Thesis/L4CasADi/.venv/lib/python3.12/site-packages/numpy/_core/include",
+            "/home/daniel/thesis_env/lib/python3.12/site-packages/numpy/_core/include",
             "/usr/include/python3.12"
         ],
         "json_file": "battery_learned_ocp.json",
@@ -65,8 +65,8 @@
         "idxsphi_0": [],
         "idxsphi_e": [],
         "lbu": [
-            50,
-            0
+            52.35987755982988,
+            0.0
         ],
         "lbx": [
             253.14999999999998
@@ -78,7 +78,10 @@
         "lbx_e": [],
         "lg": [],
         "lg_e": [],
-        "lh": [],
+        "lh": [
+            253.14999999999998,
+            253.14999999999998
+        ],
         "lh_0": [],
         "lh_e": [],
         "lphi": [],
@@ -112,7 +115,10 @@
         "ubx_e": [],
         "ug": [],
         "ug_e": [],
-        "uh": [],
+        "uh": [
+            373.15,
+            373.15
+        ],
         "uh_0": [],
         "uh_e": [],
         "uphi": [],
@@ -231,21 +237,21 @@
             ],
             [
                 0.0,
-                0.0,
+                0.1,
                 0.0,
                 0.0
             ],
             [
                 0.0,
                 0.0,
-                0.0001,
+                0.01,
                 0.0
             ],
             [
                 0.0,
                 0.0,
                 0.0,
-                1e-07
+                0.0001
             ]
         ],
         "W_0": [
@@ -257,31 +263,31 @@
             ],
             [
                 0.0,
-                0.0,
+                0.1,
                 0.0,
                 0.0
             ],
             [
                 0.0,
                 0.0,
-                0.0001,
+                0.01,
                 0.0
             ],
             [
                 0.0,
                 0.0,
                 0.0,
-                1e-07
+                0.0001
             ]
         ],
         "W_e": [
             [
-                10000,
-                0
+                10000.0,
+                0.0
             ],
             [
-                0,
-                0
+                0.0,
+                0.1
             ]
         ],
         "Zl": [],
@@ -346,10 +352,10 @@
         "nbxe_0": 2,
         "ng": 0,
         "ng_e": 0,
-        "nh": 0,
+        "nh": 2,
         "nh_0": 0,
         "nh_e": 0,
-        "np": 1,
+        "np": 2,
         "np_global": 0,
         "nphi": 0,
         "nphi_0": 0,
@@ -384,10 +390,13 @@
         "battery_learned_model/battery_learned_expl_vde_forw.c",
         "battery_learned_model/battery_learned_expl_vde_adj.c"
     ],
-    "external_function_files_ocp": [],
-    "hash": "07f72a5e966b39dd919004100f74616a",
+    "external_function_files_ocp": [
+        "battery_learned_constraints/battery_learned_constr_h_fun_jac_uxt_zt.c",
+        "battery_learned_constraints/battery_learned_constr_h_fun.c"
+    ],
+    "hash": "3e3d46a073b813ef906401965cbf6f15",
     "model": {
-        "con_h_expr": [],
+        "con_h_expr": "MX(@1=(0.00668451*omega), @2=(2500/(0.001+(3500*@1))), @3=(0.99*(Tb+((Q_heat/(1-exp((-@2))))/(0.001+(3500*@1))))), vertcat(@3, (0.97*(((@3-Tb)*exp((-@2)))+Tb))))",
         "con_h_expr_0": [],
         "con_h_expr_e": [],
         "con_phi_expr": [],
@@ -429,6 +438,7 @@
         "dyn_impl_dae_fun_jac": null,
         "dyn_impl_dae_jac": null,
         "expression_names": [
+            "con_h_expr",
             "f_expl_expr",
             "f_impl_expr",
             "p",
@@ -439,15 +449,15 @@
             "xdot",
             "z"
         ],
-        "f_expl_expr": "MX(vertcat((4.08805e-06*((1.024*sq(current))+((0.0001*(0.00668451*omega))*Q_heat))), (-(current/100800))))",
-        "f_impl_expr": "MX((xdot-vertcat((4.08805e-06*((1.024*sq(current))+((0.0001*(0.00668451*omega))*Q_heat))), (-(current/100800)))))",
+        "f_expl_expr": "MX(@1=(0.00668451*omega), @2=(2500/(0.001+(3500*@1))), @3=(0.99*(Tb+((Q_heat/(1-exp((-@2))))/(0.001+(3500*@1))))), @4=battery(vertcat(Tb, SOC, omega, Q_heat)'){0}', (vertcat((4.08805e-06*((1.024*sq(current))-((3500*@1)*((0.97*(((@3-Tb)*exp((-@2)))+Tb))-@3)))), (-(current/100800)))+(nn_on*vertcat(@4[0], @4[1]))))",
+        "f_impl_expr": "MX(@1=(0.00668451*omega), @2=(2500/(0.001+(3500*@1))), @3=(0.99*(Tb+((Q_heat/(1-exp((-@2))))/(0.001+(3500*@1))))), @4=battery(vertcat(Tb, SOC, omega, Q_heat)'){0}', (xdot-(vertcat((4.08805e-06*((1.024*sq(current))-((3500*@1)*((0.97*(((@3-Tb)*exp((-@2)))+Tb))-@3)))), (-(current/100800)))+(nn_on*vertcat(@4[0], @4[1])))))",
         "gnsf_model": null,
         "name": "battery_learned",
         "nu_original": null,
-        "p": "MX(current)",
+        "p": "MX(vertcat(current, nn_on))",
         "p_global": "MX(0x1)",
         "pi": "MX(pi)",
-        "serialized_expressions": "jhpnnagiieahaaaadaaaaaaaaaaaaaaaaaebbbaaaaaaaaaaaaaaegmcaaaaaaeeanhjdmglcifcbnodaaaaaaaaaaaaaaaaegfaaaaaaaaaaaaaaabaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaegmcaaaaaaeempjkbpcnnecgappdaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaahaaaaaaadgfhchchfgogeheglaaaaaaabaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaalaaaaaaaegdaaaaaaacacaaaaaaaaaaaaaaachcaaaaaaaaaaaaaaacheaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegmcaaaaaaeencdemblocogdkbpdaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegmcaaaaaaeegpgppcjngdbglhpdaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaafaaaaaaapgngfghgbgegdaaaaaaabacaaaaaaaaaaaaaaachhaaaaaaaaaaaaaaachiaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegdaaaaaaacacaaaaaaaaaaaaaaachgaaaaaaaaaaaaaaachjaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaagaaaaaaabfpfigfgbgehegdaaaaaaabacaaaaaaaaaaaaaaachkaaaaaaaaaaaaaaachlaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegbaaaaaaabacaaaaaaaaaaaaaaachfaaaaaaaaaaaaaaachmaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaabaaaaaaaegdaaaaaaabacaaaaaaaaaaaaaaachbaaaaaaaaaaaaaaachnaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegmcaaaaaajeamjibaaaaaaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegeaaaaaaabacaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaachpaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaeaaaaaaaegfaaaaaaabaaaaaaaaaaaaaaachabaaaaaaaaaaaaaachaaaaaaaaaaaaaaaafaaaaaaaegndaaaaaacaaaaaaaaaaaaaaachoaaaaaaaaaaaaaaachbbaaaaaaaaaaaaaaeggaaaaaaaaaaaaaaacaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaebebaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachcbaaaaaaaaaaaaaaeaaaaaaaihegpgehchbaaaaaaaaaaaaaaachcaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaacheaaaaaaaaaaaaaaachfaaaaaaaaaaaaaaachgaaaaaaaaaaaaaaachhaaaaaaaaaaaaaaachiaaaaaaaaaaaaaaachjaaaaaaaaaaaaaaachkaaaaaaaaaaaaaaachlaaaaaaaaaaaaaaachmaaaaaaaaaaaaaaachnaaaaaaaaaaaaaaachoaaaaaaaaaaaaaaachpaaaaaaaaaaaaaaachabaaaaaaaaaaaaaachbbaaaaaaaaaaaaaachdbaaaaaaaaaaaaaaegcaaaaaaaaacaaaaaaaaaaaaaaachebaaaaaaaaaaaaaachdbaaaaaaaaaaaaaachcbaaaaaaaaaaaaaacaaaaaaachfbaaaaaaaaaaaaaaebbaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaaebaaaaaaaaaaaaaaaaegmcaaaaaaadaaaaaaaaaaaaaaaaegeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaebbaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachcbaaaaaaaaaaaaaacaaaaaaaahjgchibaaaaaaaaaaaaaaebcaaaaaaaaaaaaaaachiaaaaaaaaaaaaaaachlaaaaaaaaaaaaaaaegndaaaaaacaaaaaaaaaaaaaaachiaaaaaaaaaaaaaaachlaaaaaaaaaaaaaaachcbaaaaaaaaaaaaaaebcaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaacaaaaaaaefcgegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaadfpedeegndaaaaaacaaaaaaaaaaaaaaachkbaaaaaaaaaaaaaachlbaaaaaaaaaaaaaachcbaaaaaaaaaaaaaaebbaaaaaaaaaaaaaaachebaaaaaaaaaaaaaachebaaaaaaaaaaaaaaebaaaaaaaaaaaaaaaaegmcaaaaaaadaaaaaaaaaaaaaaaachgbaaaaaaaaaaaaaa",
+        "serialized_expressions": "jhpnnagiieahaaaadaaaaaaaaaaaaaaaaaebpbaaaaaaaaaaaaaaegmcaaaaaaeeokhebokhebokpopdaaaaaaaaaaaaaaaaegfaaaaaaaaaaaaaaabaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaacaaaaaaaefcgegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaagaaaaaaabfpfigfgbgehegmcaaaaaabdaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegmcaaaaaajeemjaaaaaaaaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegmcaaaaaaeempjkbpcnnecgafpdaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegmcaaaaaajemknaaaaaaaaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegmcaaaaaaeegpgppcjngdbglhpdaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaafaaaaaaapgngfghgbgegdaaaaaaabacaaaaaaaaaaaaaaachiaaaaaaaaaaaaaaachjaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegdaaaaaaacacaaaaaaaaaaaaaaachhaaaaaaaaaaaaaaachkaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegbaaaaaaaaacaaaaaaaaaaaaaaachgaaaaaaaaaaaaaaachlaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaabaaaaaaaegeaaaaaaaaacaaaaaaaaaaaaaaachfaaaaaaaaaaaaaaachmaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaeaaaaaaaegfaaaaaaabaaaaaaaaaaaaaaachnaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaafaaaaaaaeggaaaaaaabaaaaaaaaaaaaaaachoaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaagaaaaaaaegcaaaaaaaaacaaaaaaaaaaaaaaacheaaaaaaaaaaaaaaachpaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaacaaaaaaaegeaaaaaaacacaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaachabaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaeaaaaaaaegmcaaaaaaeempjkbpcnnecgafpdaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegmcaaaaaajemknaaaaaaaaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegdaaaaaaacacaaaaaaaaaaaaaaachdbaaaaaaaaaaaaaachkaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegbaaaaaaaaacaaaaaaaaaaaaaaachcbaaaaaaaaaaaaaachebaaaaaaaaaaaaaachaaaaaaaaaaaaaaaabaaaaaaaegeaaaaaaabacaaaaaaaaaaaaaaachbbaaaaaaaaaaaaaachfbaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaeaaaaaaaegbaaaaaaabacaaaaaaaaaaaaaaachcaaaaaaaaaaaaaaachgbaaaaaaaaaaaaaachaaaaaaaaaaaaaaaabaaaaaaaegdaaaaaaabacaaaaaaaaaaaaaaachbaaaaaaaaaaaaaaachhbaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegmcaaaaaaeekahndkahndkapopdaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegcaaaaaaabacaaaaaaaaaaaaaaachibaaaaaaaaaaaaaachcaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaacaaaaaaaegfaaaaaaabaaaaaaaaaaaaaaachnaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaafaaaaaaaeggaaaaaaabaaaaaaaaaaaaaaachlbaaaaaaaaaaaaaachaaaaaaaaaaaaaaaagaaaaaaaegdaaaaaaabacaaaaaaaaaaaaaaachkbaaaaaaaaaaaaaachmbaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegbaaaaaaabacaaaaaaaaaaaaaaachnbaaaaaaaaaaaaaachcaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaabaaaaaaaegdaaaaaaabacaaaaaaaaaaaaaaachjbaaaaaaaaaaaaaachobaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegndaaaaaacaaaaaaaaaaaaaaachibaaaaaaaaaaaaaachpbaaaaaaaaaaaaaaeggaaaaaaaaaaaaaaacaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaebkdaaaaaaaaaaaaaaegmcaaaaaaeeanhjdmglcifcbnodaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegmcaaaaaaeempjkbpcnnecgappdaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaahaaaaaaadgfhchchfgogeheglaaaaaaabaaaaaaaaaaaaaaachecaaaaaaaaaaaaaachaaaaaaaaaaaaaaaalaaaaaaaegdaaaaaaacacaaaaaaaaaaaaaaachdcaaaaaaaaaaaaaachfcaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegmcaaaaaajemknaaaaaaaaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaachiaaaaaaaaaaaaaaachjaaaaaaaaaaaaaaachkaaaaaaaaaaaaaaaegdaaaaaaacacaaaaaaaaaaaaaaachhcaaaaaaaaaaaaaachkaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaachjbaaaaaaaaaaaaaachbaaaaaaaaaaaaaaachcaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaacheaaaaaaaaaaaaaaachfaaaaaaaaaaaaaaachgaaaaaaaaaaaaaaachhaaaaaaaaaaaaaaachlaaaaaaaaaaaaaaachmaaaaaaaaaaaaaaachnaaaaaaaaaaaaaaachoaaaaaaaaaaaaaaachpaaaaaaaaaaaaaaachabaaaaaaaaaaaaaachbbaaaaaaaaaaaaaachcbaaaaaaaaaaaaaachdbaaaaaaaaaaaaaachebaaaaaaaaaaaaaachfbaaaaaaaaaaaaaachgbaaaaaaaaaaaaaachhbaaaaaaaaaaaaaachibaaaaaaaaaaaaaachkbaaaaaaaaaaaaaachlbaaaaaaaaaaaaaachmbaaaaaaaaaaaaaachnbaaaaaaaaaaaaaachobaaaaaaaaaaaaaachpbaaaaaaaaaaaaaaegcaaaaaaabacaaaaaaaaaaaaaaachpbaaaaaaaaaaaaaachibaaaaaaaaaaaaaachaaaaaaaaaaaaaaaacaaaaaaaegdaaaaaaabacaaaaaaaaaaaaaaachicaaaaaaaaaaaaaachjcaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegcaaaaaaabacaaaaaaaaaaaaaaachgcaaaaaaaaaaaaaachkcaaaaaaaaaaaaaachaaaaaaaaaaaaaaaacaaaaaaaegdaaaaaaabacaaaaaaaaaaaaaaachccaaaaaaaaaaaaaachlcaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaaegmcaaaaaajeamjibaaaaaaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegeaaaaaaabacaaaaaaaaaaaaaaachecaaaaaaaaaaaaaachncaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaeaaaaaaaegfaaaaaaabaaaaaaaaaaaaaaachocaaaaaaaaaaaaaachaaaaaaaaaaaaaaaafaaaaaaaegndaaaaaacaaaaaaaaaaaaaaachmcaaaaaaaaaaaaaachpcaaaaaaaaaaaaaachacaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaafaaaaaaaogogpfpgogegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaadaaaaaaadfpedeegndaaaaaaeaaaaaaaaaaaaaaachcaaaaaaaaaaaaaaachcdaaaaaaaaaaaaaachjaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaaegiaaaaaaaaaaaaaaaeaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaacaaaaaaaaaaaaaaadaaaaaaaaaaaaaaaegceaaaaaabaaaaaaaaaaaaaaachedaaaaaaaaaaaaaaeglaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaacaaaaaaaaaaaaaaadaaaaaaaaaaaaaaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaegadaaaaaabaaaaaaaaaaaaaaachgdaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaegaaiaaaaaaafeihehfgchogbgmgbaaaaaaahgcaaaaaaahaaaaaaacgbgehehfgchjhaaaaaaaabahaaaaaaabaaaaaaaaaaaaaaababaaaaaaaaaaaaaaababaaaaaaaaaaaaaaachfdaaaaaaaaaaaaaabaaaaaaaaaaaaaaaeghaaaaaaaaaaaaaaabaaaaaaaaaaaaaaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaacaaaaaaajgadbaaaaaaaaaaaaaaacaaaaaaapgadaabagaaaaaaadhpgfhchdgfgbahaaaaaaakgjgehpfehngahaaaaaaaaaaaaaaaafaaaaaaadhigfgmgmgaaaaaaaaaaaaaaaaaaegbaaaaaaaaaaaaaaaaeaababaaabababaaapbfilobfilobfnpdmfpicmfpicmfpnpdaaaaaeaaaaaaaaaaaaaabakdmiadcooijhfeodaaaaaaaaaaaaaaabhcaaaaaaaaaaaaaaaabaaaaaaaocdaaaaaaangehihaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaachidaaaaaaaaaaaaaabaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaegkaaaaaaaeemgmgmejgcgchbgchjhbaaaaaaambaaaaaapfmgeddgpfhgfgogfgchbgehfgegpcmgjgcgcgbgehehfgchjhocdhpgaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaegppppppppbaaaaaaaaaaaaaaachldaaaaaaaaaaaaaachhdaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaegceaaaaaabaaaaaaaaaaaaaaachmdaaaaaaaaaaaaaachacaaaaaaaaaaaaaaegfeaaaaaacgbaaaaaaaaaaaaaaachndaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaegfeaaaaaacgbaaaaaaaaaaaaaaachndaaaaaaaaaaaaaachaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaacaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaegndaaaaaacaaaaaaaaaaaaaaachodaaaaaaaaaaaaaachpdaaaaaaaaaaaaaachacaaaaaaaaaaaaaaegdaaaaaaabacaaaaaaaaaaaaaaachbdaaaaaaaaaaaaaachaeaaaaaaaaaaaaaachacaaaaaaaaaaaaaadaaaaaaaegbaaaaaaaaacaaaaaaaaaaaaaaachadaaaaaaaaaaaaaachbeaaaaaaaaaaaaaachacaaaaaaaaaaaaaabaaaaaaachceaaaaaaaaaaaaaaebmdaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachacaaaaaaaaaaaaaaeaaaaaaaihegpgehchccaaaaaaaaaaaaaachdcaaaaaaaaaaaaaachecaaaaaaaaaaaaaachfcaaaaaaaaaaaaaachgcaaaaaaaaaaaaaachhcaaaaaaaaaaaaaachiaaaaaaaaaaaaaaachjaaaaaaaaaaaaaaachkaaaaaaaaaaaaaaachicaaaaaaaaaaaaaachjbaaaaaaaaaaaaaachbaaaaaaaaaaaaaaachcaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaacheaaaaaaaaaaaaaaachfaaaaaaaaaaaaaaachgaaaaaaaaaaaaaaachhaaaaaaaaaaaaaaachlaaaaaaaaaaaaaaachmaaaaaaaaaaaaaaachnaaaaaaaaaaaaaaachoaaaaaaaaaaaaaaachpaaaaaaaaaaaaaaachabaaaaaaaaaaaaaachbbaaaaaaaaaaaaaachcbaaaaaaaaaaaaaachdbaaaaaaaaaaaaaachebaaaaaaaaaaaaaachfbaaaaaaaaaaaaaachgbaaaaaaaaaaaaaachhbaaaaaaaaaaaaaachibaaaaaaaaaaaaaachkbaaaaaaaaaaaaaachlbaaaaaaaaaaaaaachmbaaaaaaaaaaaaaachnbaaaaaaaaaaaaaachobaaaaaaaaaaaaaachpbaaaaaaaaaaaaaachjcaaaaaaaaaaaaaachkcaaaaaaaaaaaaaachlcaaaaaaaaaaaaaachmcaaaaaaaaaaaaaachncaaaaaaaaaaaaaachocaaaaaaaaaaaaaachpcaaaaaaaaaaaaaachadaaaaaaaaaaaaaachbdaaaaaaaaaaaaaachcdaaaaaaaaaaaaaachedaaaaaaaaaaaaaachgdaaaaaaaaaaaaaachldaaaaaaaaaaaaaachmdaaaaaaaaaaaaaachndaaaaaaaaaaaaaachodaaaaaaaaaaaaaachpdaaaaaaaaaaaaaachaeaaaaaaaaaaaaaachbeaaaaaaaaaaaaaachceaaaaaaaaaaaaaaegcaaaaaaaaacaaaaaaaaaaaaaaachdeaaaaaaaaaaaaaachceaaaaaaaaaaaaaachacaaaaaaaaaaaaaacaaaaaaacheeaaaaaaaaaaaaaaebcaaaaaaaaaaaaaaachecaaaaaaaaaaaaaachbdaaaaaaaaaaaaaaegndaaaaaacaaaaaaaaaaaaaaachecaaaaaaaaaaaaaachbdaaaaaaaaaaaaaachacaaaaaaaaaaaaaaebaaaaaaaaaaaaaaaaegmcaaaaaaadaaaaaaaaaaaaaaaaegeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaebbaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachacaaaaaaaaaaaaaacaaaaaaaahjgchieaaaaaaaaaaaaaaebcaaaaaaaaaaaaaaachjaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaaegndaaaaaacaaaaaaaaaaaaaaachjaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaachacaaaaaaaaaaaaaaebcaaaaaaaaaaaaaaachcaaaaaaaaaaaaaaachcdaaaaaaaaaaaaaaegndaaaaaacaaaaaaaaaaaaaaachcaaaaaaaaaaaaaaachcdaaaaaaaaaaaaaachacaaaaaaaaaaaaaaebbaaaaaaaaaaaaaaachdeaaaaaaaaaaaaaachdeaaaaaaaaaaaaaaebaaaaaaaaaaaaaaaaegmcaaaaaaadaaaaaaaaaaaaaaaachgeaaaaaaaaaaaaaa",
         "t": [],
         "t0": null,
         "t_label": "t",
@@ -467,6 +477,7 @@
     "name": "battery_learned",
     "p_global_values": [],
     "parameter_values": [
+        0,
         0
     ],
     "problem_class": "OCP",
@@ -565,7 +576,7 @@
         "levenberg_marquardt": 0.0,
         "log_dual_step_norm": false,
         "log_primal_step_norm": false,
-        "model_external_shared_lib_dir": "/home/lechkula/Documents/Thesis/L4CasADi/Learning-Enhanced-Non-Linear-Model-Predictive-Control/_l4c_generated",
+        "model_external_shared_lib_dir": "/home/daniel/thesis/_l4c_generated",
         "model_external_shared_lib_name": "battery",
         "nlp_qp_tol_min_comp": 1e-11,
         "nlp_qp_tol_min_eq": 1e-10,

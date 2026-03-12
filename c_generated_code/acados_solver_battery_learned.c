@@ -42,6 +42,7 @@
 #include "battery_learned_model/battery_learned_model.h"
 
 
+#include "battery_learned_constraints/battery_learned_constraints.h"
 
 
 
@@ -341,6 +342,16 @@ void battery_learned_acados_create_setup_functions(battery_learned_solver_capsul
     ext_fun_opts.external_workspace = true;
     if (N > 0)
     {
+        // constraints.constr_type == "BGH" and dims.nh > 0
+        capsule->nl_constr_h_fun_jac = (external_function_external_param_casadi *) malloc(sizeof(external_function_external_param_casadi)*(N-1));
+        for (int i = 0; i < N-1; i++) {
+            MAP_CASADI_FNC(nl_constr_h_fun_jac[i], battery_learned_constr_h_fun_jac_uxt_zt);
+        }
+        capsule->nl_constr_h_fun = (external_function_external_param_casadi *) malloc(sizeof(external_function_external_param_casadi)*(N-1));
+        for (int i = 0; i < N-1; i++) {
+            MAP_CASADI_FNC(nl_constr_h_fun[i], battery_learned_constr_h_fun);
+        }
+    
 
 
 
@@ -496,8 +507,9 @@ void battery_learned_acados_setup_nlp_in(battery_learned_solver_capsule* capsule
    double* W_0 = calloc(NY0*NY0, sizeof(double));
     // change only the non-zero elements:
     W_0[0+(NY0) * 0] = 10000;
-    W_0[2+(NY0) * 2] = 0.0001;
-    W_0[3+(NY0) * 3] = 0.0000001;
+    W_0[1+(NY0) * 1] = 0.1;
+    W_0[2+(NY0) * 2] = 0.01;
+    W_0[3+(NY0) * 3] = 0.0001;
     ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, 0, "W", W_0);
     free(W_0);
     double* Vx_0 = calloc(NY0*NX, sizeof(double));
@@ -523,8 +535,9 @@ void battery_learned_acados_setup_nlp_in(battery_learned_solver_capsule* capsule
     double* W = calloc(NY*NY, sizeof(double));
     // change only the non-zero elements:
     W[0+(NY) * 0] = 10000;
-    W[2+(NY) * 2] = 0.0001;
-    W[3+(NY) * 3] = 0.0000001;
+    W[1+(NY) * 1] = 0.1;
+    W[2+(NY) * 2] = 0.01;
+    W[3+(NY) * 3] = 0.0001;
 
     for (int i = 1; i < N; i++)
     {
@@ -560,6 +573,7 @@ void battery_learned_acados_setup_nlp_in(battery_learned_solver_capsule* capsule
     double* W_e = calloc(NYN*NYN, sizeof(double));
     // change only the non-zero elements:
     W_e[0+(NYN) * 0] = 10000;
+    W_e[1+(NYN) * 1] = 0.1;
     ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, N, "W", W_e);
     free(W_e);
     double* Vx_e = calloc(NYN*NX, sizeof(double));
@@ -623,7 +637,7 @@ void battery_learned_acados_setup_nlp_in(battery_learned_solver_capsule* capsule
     double* lubu = calloc(2*NBU, sizeof(double));
     double* lbu = lubu;
     double* ubu = lubu + NBU;
-    lbu[0] = 50;
+    lbu[0] = 52.35987755982988;
     ubu[0] = 418.87902047863906;
     ubu[1] = 4000;
 
@@ -662,6 +676,28 @@ void battery_learned_acados_setup_nlp_in(battery_learned_solver_capsule* capsule
     free(lubx);
 
 
+    // set up nonlinear constraints for stage 1 to N-1
+    double* luh = calloc(2*NH, sizeof(double));
+    double* lh = luh;
+    double* uh = luh + NH;
+    lh[0] = 253.15;
+    lh[1] = 253.15;
+    uh[0] = 373.15;
+    uh[1] = 373.15;
+
+    for (int i = 1; i < N; i++)
+    {
+        ocp_nlp_constraints_model_set_external_param_fun(nlp_config, nlp_dims, nlp_in, i, "nl_constr_h_fun_jac",
+                                      &capsule->nl_constr_h_fun_jac[i-1]);
+        ocp_nlp_constraints_model_set_external_param_fun(nlp_config, nlp_dims, nlp_in, i, "nl_constr_h_fun",
+                                      &capsule->nl_constr_h_fun[i-1]);
+        
+        ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, nlp_out, i, "lh", lh);
+        ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, nlp_out, i, "uh", uh);
+        
+        
+    }
+    free(luh);
 
 
 
@@ -960,7 +996,7 @@ int battery_learned_acados_update_params(battery_learned_solver_capsule* capsule
 {
     int solver_status = 0;
 
-    int casadi_np = 1;
+    int casadi_np = 2;
     if (casadi_np != np) {
         printf("acados_update_params: trying to set %i parameters for external functions."
             " External function has %i parameters. Exiting.\n", np, casadi_np);
@@ -1043,6 +1079,13 @@ int battery_learned_acados_free(battery_learned_solver_capsule* capsule)
     // cost
 
     // constraints
+    for (int i = 0; i < N-1; i++)
+    {
+        external_function_external_param_casadi_free(&capsule->nl_constr_h_fun_jac[i]);
+        external_function_external_param_casadi_free(&capsule->nl_constr_h_fun[i]);
+    }
+    free(capsule->nl_constr_h_fun_jac);
+    free(capsule->nl_constr_h_fun);
 
 
 

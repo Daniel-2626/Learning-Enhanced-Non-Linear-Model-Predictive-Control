@@ -30,34 +30,34 @@
 
 cimport acados_solver_common
 
-cdef extern from "acados_solver_battery_learned.h":
-    ctypedef struct nlp_solver_capsule "battery_learned_solver_capsule":
+cdef extern from "acados_solver_battery_nominal.h":
+    ctypedef struct nlp_solver_capsule "battery_nominal_solver_capsule":
         pass
 
-    nlp_solver_capsule * acados_create_capsule "battery_learned_acados_create_capsule"()
-    int acados_free_capsule "battery_learned_acados_free_capsule"(nlp_solver_capsule *capsule)
+    nlp_solver_capsule * acados_create_capsule "battery_nominal_acados_create_capsule"()
+    int acados_free_capsule "battery_nominal_acados_free_capsule"(nlp_solver_capsule *capsule)
 
-    int acados_create "battery_learned_acados_create"(nlp_solver_capsule * capsule)
+    int acados_create "battery_nominal_acados_create"(nlp_solver_capsule * capsule)
 
-    int acados_create_with_discretization "battery_learned_acados_create_with_discretization"(nlp_solver_capsule * capsule, int n_time_steps, double* new_time_steps)
-    int acados_update_time_steps "battery_learned_acados_update_time_steps"(nlp_solver_capsule * capsule, int N, double* new_time_steps)
-    int acados_update_qp_solver_cond_N "battery_learned_acados_update_qp_solver_cond_N"(nlp_solver_capsule * capsule, int qp_solver_cond_N)
+    int acados_create_with_discretization "battery_nominal_acados_create_with_discretization"(nlp_solver_capsule * capsule, int n_time_steps, double* new_time_steps)
+    int acados_update_time_steps "battery_nominal_acados_update_time_steps"(nlp_solver_capsule * capsule, int N, double* new_time_steps)
+    int acados_update_qp_solver_cond_N "battery_nominal_acados_update_qp_solver_cond_N"(nlp_solver_capsule * capsule, int qp_solver_cond_N)
 
-    int acados_update_params "battery_learned_acados_update_params"(nlp_solver_capsule * capsule, int stage, double *value, int np_)
-    int acados_update_params_sparse "battery_learned_acados_update_params_sparse"(nlp_solver_capsule * capsule, int stage, int *idx, double *p, int n_update)
-    int acados_set_p_global_and_precompute_dependencies "battery_learned_acados_set_p_global_and_precompute_dependencies"(nlp_solver_capsule * capsule, double *value, int data_len)
-    int acados_solve "battery_learned_acados_solve"(nlp_solver_capsule * capsule)
-    int acados_reset "battery_learned_acados_reset"(nlp_solver_capsule * capsule, int reset_qp_solver_mem)
-    int acados_free "battery_learned_acados_free"(nlp_solver_capsule * capsule)
-    void acados_print_stats "battery_learned_acados_print_stats"(nlp_solver_capsule * capsule)
+    int acados_update_params "battery_nominal_acados_update_params"(nlp_solver_capsule * capsule, int stage, double *value, int np_)
+    int acados_update_params_sparse "battery_nominal_acados_update_params_sparse"(nlp_solver_capsule * capsule, int stage, int *idx, double *p, int n_update)
+    int acados_set_p_global_and_precompute_dependencies "battery_nominal_acados_set_p_global_and_precompute_dependencies"(nlp_solver_capsule * capsule, double *value, int data_len)
+    int acados_solve "battery_nominal_acados_solve"(nlp_solver_capsule * capsule)
+    int acados_reset "battery_nominal_acados_reset"(nlp_solver_capsule * capsule, int reset_qp_solver_mem)
+    int acados_free "battery_nominal_acados_free"(nlp_solver_capsule * capsule)
+    void acados_print_stats "battery_nominal_acados_print_stats"(nlp_solver_capsule * capsule)
 
-    int acados_custom_update "battery_learned_acados_custom_update"(nlp_solver_capsule* capsule, double * data, int data_len)
+    int acados_custom_update "battery_nominal_acados_custom_update"(nlp_solver_capsule* capsule, double * data, int data_len)
 
-    acados_solver_common.ocp_nlp_in *acados_get_nlp_in "battery_learned_acados_get_nlp_in"(nlp_solver_capsule * capsule)
-    acados_solver_common.ocp_nlp_out *acados_get_nlp_out "battery_learned_acados_get_nlp_out"(nlp_solver_capsule * capsule)
-    acados_solver_common.ocp_nlp_out *acados_get_sens_out "battery_learned_acados_get_sens_out"(nlp_solver_capsule * capsule)
-    acados_solver_common.ocp_nlp_solver *acados_get_nlp_solver "battery_learned_acados_get_nlp_solver"(nlp_solver_capsule * capsule)
-    acados_solver_common.ocp_nlp_config *acados_get_nlp_config "battery_learned_acados_get_nlp_config"(nlp_solver_capsule * capsule)
-    void *acados_get_nlp_opts "battery_learned_acados_get_nlp_opts"(nlp_solver_capsule * capsule)
-    acados_solver_common.ocp_nlp_dims *acados_get_nlp_dims "battery_learned_acados_get_nlp_dims"(nlp_solver_capsule * capsule)
-    acados_solver_common.ocp_nlp_plan *acados_get_nlp_plan "battery_learned_acados_get_nlp_plan"(nlp_solver_capsule * capsule)
+    acados_solver_common.ocp_nlp_in *acados_get_nlp_in "battery_nominal_acados_get_nlp_in"(nlp_solver_capsule * capsule)
+    acados_solver_common.ocp_nlp_out *acados_get_nlp_out "battery_nominal_acados_get_nlp_out"(nlp_solver_capsule * capsule)
+    acados_solver_common.ocp_nlp_out *acados_get_sens_out "battery_nominal_acados_get_sens_out"(nlp_solver_capsule * capsule)
+    acados_solver_common.ocp_nlp_solver *acados_get_nlp_solver "battery_nominal_acados_get_nlp_solver"(nlp_solver_capsule * capsule)
+    acados_solver_common.ocp_nlp_config *acados_get_nlp_config "battery_nominal_acados_get_nlp_config"(nlp_solver_capsule * capsule)
+    void *acados_get_nlp_opts "battery_nominal_acados_get_nlp_opts"(nlp_solver_capsule * capsule)
+    acados_solver_common.ocp_nlp_dims *acados_get_nlp_dims "battery_nominal_acados_get_nlp_dims"(nlp_solver_capsule * capsule)
+    acados_solver_common.ocp_nlp_plan *acados_get_nlp_plan "battery_nominal_acados_get_nlp_plan"(nlp_solver_capsule * capsule)

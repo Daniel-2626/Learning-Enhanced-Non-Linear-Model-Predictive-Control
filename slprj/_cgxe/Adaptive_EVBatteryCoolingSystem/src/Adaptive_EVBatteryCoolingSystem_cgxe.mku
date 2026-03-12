@@ -8,7 +8,7 @@ LD = $(CC)
  
 MODEL  = Adaptive_EVBatteryCoolingSystem
 TARGET = cgxe
-MODULE_SRCS 	= m_p8GjkuxlZDFtXo89fdkiFF.c
+MODULE_SRCS 	= m_eLTcbc94yFfbvZfaWqHr1F.c
 MODEL_SRC	= Adaptive_EVBatteryCoolingSystem_cgxe.c
 MODEL_REG    = Adaptive_EVBatteryCoolingSystem_cgxe_registry.c
 MAKEFILE    = Adaptive_EVBatteryCoolingSystem_cgxe.mku
@@ -18,13 +18,13 @@ BUILDARGS   =
  
 
  
-USER_INCLUDES = -I"/home/lechkula/Documents/Thesis/L4CasADi/Learning-Enhanced-Non-Linear-Model-Predictive-Control" -I"/home/lechkula/Documents/Thesis/L4CasADi/Learning-Enhanced-Non-Linear-Model-Predictive-Control/slprj/_cprj" 
+USER_INCLUDES = -I"/home/daniel/thesis" -I"/home/daniel/thesis/slprj/_cprj" 
 MLSL_INCLUDES     = \
     -I"/usr/local/MATLAB/R2025b/extern/include" \
     -I"/usr/local/MATLAB/R2025b/simulink/include" \
     -I"/usr/local/MATLAB/R2025b/rtw/c/src"
 
-THIRD_PARTY_INCLUDES = -I"/home/lechkula/Documents/Thesis/L4CasADi/Learning-Enhanced-Non-Linear-Model-Predictive-Control/slprj/_cgxe/Adaptive_EVBatteryCoolingSystem/src" -I"/usr/include/python3.12" 
+THIRD_PARTY_INCLUDES = -I"/home/daniel/thesis/slprj/_cgxe/Adaptive_EVBatteryCoolingSystem/src" -I"/usr/include/python3.12" 
 
 INCLUDE_PATH = $(MLSL_INCLUDES) $(USER_INCLUDES) $(THIRD_PARTY_INCLUDES)
  

@@ -22,7 +22,7 @@ class BatteryDynamics:
         pass #
     def model(self): # remove gym_env for cascaded tank
 
-        T_bat = cs.MX.sym('T_bat')
+        T_bat = cs.MX.sym('Tb')
         SOC= cs.MX.sym('SOC')
         X = cs.vertcat(T_bat, SOC)
         omega = cs.MX.sym('omega') # Power into heater/cooler given as efficiency*Pin
@@ -42,34 +42,24 @@ class BatteryDynamics:
         R_battery = 4*20*0.0128 # Battery resistance
         C_battery = 28*3600 # in coloumb
         hA_bat = 2500
-        alpha_0 = 0.65
-        alpha_1 = 0.99
-        alpha_2 = .97
+        alpha = 0.65
         kappa = 1e-4
-        mdot_c = density_coolant*pump_displacement*omega
-        
+        mdot_c = density_coolant*pump_displacement*omega  
+        alpha1 = 0.99
+        alpha2 = 0.97
 
-
-        # Dynamics
-        
+        # Dynamics 
         # Get the cooler in and out temps
         NTU_bat  = (hA_bat) / (mdot_c*c_coolant + 1e-3)
-        T_clin= alpha_1*(T_bat + 1/(1-np.exp(-NTU_bat))*Q_heat/(mdot_c*c_coolant + 1e-3))
-        T_clout = alpha_2*((T_clin - T_bat) * np.exp(-NTU_bat) + T_bat)
-        
-        constraint = cs.types.SimpleNamespace()
-        constraint.T_clin_min = -10 + CELSIUS_TO_KELVIN
-        constraint.T_clin_max = 100 + CELSIUS_TO_KELVIN
-        constraint.T_clout_min = -10 + CELSIUS_TO_KELVIN
-        constraint.T_clout_max = 100 + CELSIUS_TO_KELVIN
-        constraint.expr = cs.vertcat(T_clin, T_clout)
-
+        T_clin= alpha1 * (T_bat + 1/(1-np.exp(-NTU_bat))*Q_heat/(mdot_c*c_coolant + 1e-3))
+        T_clout = alpha2 * ((T_clin - T_bat) * np.exp(-NTU_bat) + T_bat)
         Q_cool = mdot_c*c_coolant*(T_clout - T_clin)
 
         # Now for the actual calculations 
-        T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool)
+        T_bat_dot_model = alpha/(m_battery*c_battery) * (current**2 * R_battery - Q_cool)
         SOC_dot_model = -current/C_battery
         X_dot_nominal = cs.vertcat(T_bat_dot_model, SOC_dot_model)
+
 
         f_expl = X_dot_nominal 
         x_start = np.array([-10+CELSIUS_TO_KELVIN,1]) # initial constraint (gets overwritten)
@@ -85,14 +75,15 @@ class BatteryDynamics:
         model.f_nominal = X_dot_nominal
         model.x_start = x_start
         model.constraints = cs.vertcat([]) # add constraints here or in mpc?
+        # Constraint expressions
+        model.con_h_expr = cs.vertcat(T_clin, T_clout) 
         model.name = "battery_nominal"
         
-        return model, constraint 
+        return model 
 
 class MPC:
-    def __init__(self, model, constraint, N, t_horizon):
+    def __init__(self, model, N, t_horizon):
         self.model = model
-        self.constraint = constraint
         self.N = N
         self.t_horizon = t_horizon
 
@@ -102,25 +93,21 @@ class MPC:
     
     def ocp(self):
         model = self.model
-        constraint = self.constraint
 
         t_horizon = self.t_horizon
         N = self.N
 
         # Get model
-        model_ac = self.acados_model(model=model, constraint=constraint)
-        model_ac.con_h_expr = constraint.expr
-        model_ac.con_h_expr_0 = constraint.expr
+        model_ac = self.acados_model(model=model)
+
         # Dimensions
         nx = 2
         nu = 2
         ny = nx + nu # Stage cost
         ny_e = nx # Terminal cost considers only states
-        nh = constraint.expr.shape[0]
-        
+        nh = 2  # Number of nonlinear constraints (Tcl_in and Tcl_out)
         nsh = nh
         ns = nsh
-
         # Create ocp to formulate optim
         ocp = AcadosOcp()
         ocp.model = model_ac
@@ -128,7 +115,8 @@ class MPC:
         ocp.dims.nx = nx
         ocp.dims.nu = nu
         ocp.dims.ny = ny
-        ocp.dims.nh = nh
+        ocp.dims.nh = nh  # Set the number of nonlinear constraints
+
 
         ocp.solver_options.tf = t_horizon
 
@@ -145,13 +133,21 @@ class MPC:
             ocp.cost.Vu[i + nx, i] = 1
         ocp.cost.Vz = np.array([[]]) # don't know what the V_z z, what the variable z should be
         ocp.cost.Vx_e = np.eye(nx)
-        #l4c_y_expr = None
+        l4c_y_expr = None
 
         # Define weight parameters
         Q = np.diag([10000, 0.1])
         R = np.diag([0.0001, 0.0000001])
         ocp.cost.W = scipy.linalg.block_diag(Q,R)
-
+        
+        ocp.cost.zl = 10000000 * np.ones((ns,))
+        ocp.cost.zu = 10000000 * np.ones((ns,))
+        ocp.cost.Zl = 10000000* np.ones((ns,))
+        ocp.cost.Zu = 10000000 * np.ones((ns,))
+        ocp.constraints.lsh = np.zeros(nsh)
+        ocp.constraints.ush = np.zeros(nsh)
+        ocp.constraints.idxsh = np.array(range(nsh))
+        
         # Initial state (will be overwritten?)
         ocp.cost.W_e = Q 
         ocp.cost.yref = np.zeros((ny, ))
@@ -162,69 +158,28 @@ class MPC:
 
         # Set constraints
         omega_max = 4000*2*np.pi/60
-        
-        omega_min = 150*2*np.pi/60
-        print(omega_min)
+        omega_min = 1000*2*np.pi/60
         Q_heat_max = 4000
         Q_heat_min = 0
         Tb_max = 50 + CELSIUS_TO_KELVIN
         Tb_min = -20 + CELSIUS_TO_KELVIN
         SOC_max = 1
         SOC_min = 0
+        Tcl_in_min = -20 + CELSIUS_TO_KELVIN
+        Tcl_out_min = -20 + CELSIUS_TO_KELVIN
+        Tcl_in_max = 100 + CELSIUS_TO_KELVIN
+        Tcl_out_max = 100 + CELSIUS_TO_KELVIN
+
         ocp.constraints.lbu = np.array([omega_min, Q_heat_min])
         ocp.constraints.ubu = np.array([omega_max, Q_heat_max])
         ocp.constraints.idxbu = np.array([0,1])
         ocp.constraints.idxbx = np.array([0]) # at what indices to have constraints? 
         ocp.constraints.ubx = np.array([Tb_max])
         ocp.constraints.lbx = np.array([Tb_min])
+        # NONLINEAR CONSTRAINTS on Tcl_in and Tcl_out
+        ocp.constraints.lh = np.array([Tcl_in_min, Tcl_out_min])
+        ocp.constraints.uh = np.array([Tcl_in_max, Tcl_out_max])
 
-        ocp.constraints.lh = np.array(
-        [
-            constraint.T_clin_min,
-            constraint.T_clout_min
-        ]
-        )
-        ocp.constraints.uh = np.array(
-            [
-                constraint.T_clin_max,
-                constraint.T_clout_max
-            ]
-        )
-        ocp.cost.zl = 10000000 * np.ones((ns,))
-        ocp.cost.zu = 10000000 * np.ones((ns,))
-        ocp.cost.Zl = 10000000* np.ones((ns,))
-        ocp.cost.Zu = 10000000 * np.ones((ns,))
-
-        ocp.constraints.lh = np.array(
-        [
-            constraint.T_clin_min,
-            constraint.T_clout_min
-        ]
-        )
-        ocp.constraints.uh = np.array(
-            [
-                constraint.T_clin_max,
-                constraint.T_clout_max
-            ]
-        )
-
-        ocp.constraints.lh_0 = np.array(
-        [
-            constraint.T_clin_min,
-            constraint.T_clout_min
-        ]
-        )
-        ocp.constraints.uh_0 = np.array(
-            [
-                constraint.T_clin_max,
-                constraint.T_clout_max
-            ]
-        )
-
-        ocp.constraints.lsh = np.zeros(nsh)
-        ocp.constraints.ush = np.zeros(nsh)
-        ocp.constraints.idxsh = np.array(range(nsh))
-        
         # Solver options
         ocp.solver_options.qp_solver = "FULL_CONDENSING_HPIPM"
         ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
@@ -233,10 +188,11 @@ class MPC:
         
         # Will be overwritten
         ocp.parameter_values = 0
+        print("omega-min", omega_min)
 
         return ocp
 
-    def acados_model(self, model, constraint):
+    def acados_model(self, model):
         model_ac = AcadosModel()
         model_ac.f_impl_expr = model.xdot - model.f_expl # Implicit 0 = xdot - f
         model_ac.f_expl_expr = model.f_expl
@@ -244,8 +200,8 @@ class MPC:
         model_ac.xdot = model.xdot
         model_ac.u = model.u
         model_ac.p = model.p
+        model_ac.con_h_expr = model.con_h_expr
         model_ac.name = model.name
-        model_ac.con_h_expr = constraint.expr
         return model_ac
 
 
@@ -258,10 +214,10 @@ class Controller:
         t_horizon = 40
         model = BatteryDynamics()
       
-        casadi_model, constraint = model.model()
+        casadi_model = model.model()
+
         
-        # MIGHT CAUSE ISSUES SINCE DIFFERENT THAN YU MEI, here model=casadi_model
-        self.solver = MPC(model=casadi_model, constraint=constraint, N=self.N, t_horizon = t_horizon).solver # Returns the solver object from MPC
+        self.solver = MPC(model=model.model(), N=self.N, t_horizon = t_horizon).solver # Returns the solver object from MPC
 
          
         
@@ -290,7 +246,7 @@ class Controller:
     def get_input(self, T_bat_target, T_bat_0, SOC_0, current_0, dT_bat, dSOC):
        
         print("--------------------------------")
-        print("NOMINAL ACADOS MPC BATTERY MODEL WITH SLACK")
+        print("NOMINAL ACADOS MPC BATTERY MODEL")
         if self.current_iterate == 0:
             self.xt_pred = ([T_bat_0, SOC_0])
         disturbances = self.disturbance_values
@@ -329,9 +285,6 @@ class Controller:
         self.total_cost += self.solver.get_cost()/(1e8)
         # ut = solver.get(0, "u").item()
         ut = self.solver.get(0, "u")
-        slack_lower = self.solver.get(1, "sl")
-        slack_upper = self.solver.get(1, "su")
-        print(slack_lower, slack_upper)
         omega_value = ut[0].item()
         Q_heat_value = ut[1].item()
         status = self.solver.get_status()

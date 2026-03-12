@@ -1,7 +1,7 @@
 *.mat
 _l4c_generated/
 c_generated_code/
-_pycache/
+__pycache/
 slprj
 *.csv
 *.asv

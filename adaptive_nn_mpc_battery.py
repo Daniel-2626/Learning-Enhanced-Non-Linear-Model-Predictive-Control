@@ -70,7 +70,7 @@ class BatteryLearnedDynamics:
         #Q_cool = u2*c_clin*(T_clout - T_clin)
 
         # Now for the actual calculations 
-        T_bat_dot_model = alpha/(m_battery*c_battery) * (current**2 * R_battery + mdot_c * kappa * Q_heat)
+        T_bat_dot_model = alpha/(m_battery*c_battery) * (current**2 * R_battery + mdot_c * kappa * Q_heat*c_coolant)
         SOC_dot_model = -current/C_battery
         X_dot_nominal = cs.vertcat(T_bat_dot_model, SOC_dot_model)
 

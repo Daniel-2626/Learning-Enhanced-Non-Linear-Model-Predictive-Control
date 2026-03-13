@@ -1,6 +1,6 @@
 %% 
 %rmdir("_l4c_generated/",'s')
-rmdir("c_generated_code/", 's')
+%rmdir("c_generated_code/", 's')
 open("Adaptive_EVBatteryCoolingSystem.slx")
 T_env = 0;
 T_init = T_env + 273.15;

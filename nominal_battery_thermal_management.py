@@ -13,8 +13,8 @@ class Model_Predictive_Controller:
         
         R_omega = 0.01
         R_Q_heat = 1
-        t_horizon = 40
-        N = 40 # number of look ahead steps
+        t_horizon = 5
+        N = 10 # number of look ahead steps
         step_horizon = t_horizon/N # time between steps in seconds
 
         # Constraints
@@ -24,7 +24,7 @@ class Model_Predictive_Controller:
         SOC_max = 1
         
         omega_max = 4000 #*2*np.pi/60
-        omega_min = 0 
+        omega_min = 100
 
         Q_heat_max = 50 # W
         Q_heat_min = 0 # W
@@ -77,14 +77,30 @@ class Model_Predictive_Controller:
         c_coolant = 3500
         density_coolant = 1050
         pump_displacement = 1/(2*np.pi)*40/(100**3) # D parameter in simulink
+        mdot_c = density_coolant*pump_displacement*omega
         R_battery = 4*20*0.0128 # Battery resistance
         C_battery = 28*3600 # in coloumb
-        K_heater = 50
+        hA_bat = 2500
         alpha = 0.65
-        ## Controller model 
-        T_bat_dot_model = alpha/(m_battery*c_battery) * (current**2 * R_battery + density_coolant*pump_displacement*omega*c_coolant*Q_heat/K_heater)
+        alpha1 = 0.99
+        alpha2 = 0.97
+
+
+        # Get the cooler in and out temps
+        NTU_bat  = (hA_bat) / (mdot_c*c_coolant + 1e-3)
+        T_clin= alpha1 * (T_bat + 1/(1-np.exp(-NTU_bat))*Q_heat/(mdot_c*c_coolant + 1e-3))
+        T_clout = alpha2 * ((T_clin - T_bat) * np.exp(-NTU_bat) + T_bat)
+        Q_cool = mdot_c*c_coolant*(T_clout - T_clin)
+
+        # Now for the actual calculations 
+        T_bat_dot_model = alpha/(m_battery*c_battery) * (current**2 * R_battery - Q_cool)
         SOC_dot_model = -current/C_battery
         ode_model = ca.vertcat(T_bat_dot_model, SOC_dot_model)
+
+        # ## Controller model 
+        # T_bat_dot_model = alpha/(m_battery*c_battery) * (current**2 * R_battery + density_coolant*pump_displacement*omega*c_coolant*Q_heat/K_heater)
+        # SOC_dot_model = -current/C_battery
+        # ode_model = ca.vertcat(T_bat_dot_model, SOC_dot_model)
 
         f_model = ca.Function("f_model", [states,controls,disturbances], [ode_model], ["x", "u", "d"], ["ode"])
         

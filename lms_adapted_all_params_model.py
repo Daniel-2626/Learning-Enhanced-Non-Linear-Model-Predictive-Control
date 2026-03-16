@@ -265,7 +265,7 @@ if __name__ == '__main__':
             x1 = state_init[0].item()
             x2 = state_init[1].item()
             
-            
+            # Actually wrong, should be x1_last, x2_last. Want to compare x_k+1 with predition at x_k
             G = np.array([[u0, -np.sqrt(2*grav*x1), 0, 0], [0,0,np.sqrt(2*grav*x1), -np.sqrt(2*grav*x2)]])
             #G = np.array([[0, 0, 0, 0], [0,0,0, -np.sqrt(2*grav*x2+0.001)]])
             pred_error = x_actual - x_model 

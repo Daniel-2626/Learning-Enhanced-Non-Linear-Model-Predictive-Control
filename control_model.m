@@ -1,30 +1,38 @@
 %% Coefficients (taken from simulink/formula collections)
-m_b = 20*2.5*4; % kg OK, double check with Prashant
-c_b = 795; % J/kgK OK, double check with Prashant
-c_coolant = 3500; % J/kgK OK, double check with Prashant
-rho = 1050; % kg/m3, density of coolant, OK, double check with prashant
-D = 1/(2*pi)*40/(100^3); % m3/rad displacement, OK, double check with Daniel; 40 cm3/rev --> 40/100^3: 
-R_b = 4*20*(0.0128); %0.0028; % Ohm. Each battery pack has 20 cells, 0.0109 ohm in each
-C_battery = 28 * 3600; % Ah --> As (Coloumb) to have it in SI. each battery pack has 28 Ah, 4 packs
-alpha = 0.65;%0.55;
-alpha_1 = 0.998321; %0.1;
-alpha_2 = 0.999593; %0.319586;
-hAbat = 2500;
-%[0.998321, 0.999593] identified
+% Parameters
+m_battery = 20*2.5*4;
+c_battery = 795;
+c_coolant = 3500;
+density_coolant = 1050;
+
+pump_displacement = 1/(2*pi)*40/(100^3); % D parameter in simulink
+R_battery = 4*20*0.0128; % Battery resistance
+C_battery = 28*3600; % in coloumb
+hA_bat = 2500;
+
+T_env = 0 + 273.15;
+
+%[0.637968, 1, 0.980682, 0.981036]
+alpha_0 = 0.637968; %0.65
+alpha_1 = 1; % 0.99 %0.998427 #0.99
+alpha_2 = 0.980682; % #0.999686 #.97
+alpha_3 = 0.981036; %
+gamma = 7.59853;
 %%
 % u = w (omega, angular velocity)
 u = sym('u', [2;1]);
 % x = [SOC; T_b]
 x = sym('x', [2;1]);
 % p = [I_b; T_cool_out; T_cool_in]
-p = sym('p', [3;1]);
+p = sym('p');
 % don't remember why but need to include time for some reason
 syms t real
-
-NTU = hAbat/(rho*D*u(1)*c_coolant + 1e-3);
-T_cool_in = alpha_1*(x(1) + 1/(1-exp(-NTU))*u(2)/(rho*D*u(1)*c_coolant + 1e-3));
-T_cool_out = alpha_2*((T_cool_in - x(1)) * exp(-NTU) + x(1));
-f = [alpha/(m_b*c_b) * (p(1)^2*R_b - rho*D*u(1)*c_coolant*(T_cool_out - T_cool_in));
+mdot_c = density_coolant*pump_displacement*u(1);
+NTU = alpha_3*hA_bat/(mdot_c*c_coolant + 1e-3);
+T_cool_in = (x(1) + alpha_1*1/(1-exp(-NTU))*u(2)/(mdot_c*c_coolant + 1e-3));
+T_cool_out = ((T_cool_in - x(1)) * alpha_2*exp(-NTU) + x(1));
+Q_cool = mdot_c * c_coolant * (T_cool_out - T_cool_in);
+f = [alpha_0/(m_battery*c_battery) * (p(1)^2*R_battery - Q_cool + gamma*(T_env-x(1)));
     -p(1)/C_battery];
 matlabFunction(f, 'File', 'dynamics', 'Vars', {t, x, u, p})
 
@@ -39,7 +47,7 @@ current = s.current;
 %ang_vel = s.ang_vel;
 
 SOC_true = s.SOC;
-T_bat_true = s.T_bat;
+T_bat_true = s.T_bat + 273.15;
 omega = s.omega;
 Q_heat = s.Q;
 
@@ -89,7 +97,15 @@ hold on
 plot(tRK4, T_bat_true, 'LineWidth', 2, 'LineStyle','--')
 legend(["model", "true"])
 
-%% 
-%figure(2)
-%plot(T_cool_in-273.15)
-%plot(rho*D*c_coolant*(T_cool_out-T_cool_in)/(m_b*c_b).*ang_vel)
+%% Finding steady state
+omega_ss = 100;
+T_bat_ss = 20.5 + 273.15;
+I_ss = 0;
+
+mdot_c_ss = density_coolant*pump_displacement*omega_ss;
+NTU_ss = alpha_3*hA_bat/(mdot_c_ss*c_coolant + 1e-3);
+T_cool_in_ss = (T_bat_ss + alpha_1*1/(1-exp(-NTU_ss))*u(2)/(mdot_c_ss*c_coolant + 1e-3));
+T_cool_out_ss = ((T_cool_in_ss - T_bat_ss) * alpha_2*exp(-NTU_ss) + T_bat_ss);
+Q_cool_ss = mdot_c_ss * c_coolant * (T_cool_out_ss - T_cool_in_ss);
+f_ss = alpha_0/(m_battery*c_battery) * (I_ss^2*R_battery - Q_cool_ss + gamma*(T_env-T_bat_ss));
+q_heat_ss = double(solve(f_ss == 0, u(2)));

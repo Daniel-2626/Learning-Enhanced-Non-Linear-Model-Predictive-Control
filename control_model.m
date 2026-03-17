@@ -10,7 +10,7 @@ R_battery = 4*20*0.0128; % Battery resistance
 C_battery = 28*3600; % in coloumb
 hA_bat = 2500;
 
-T_env = 0 + 273.15;
+T_env = -10 + 273.15;
 
 %[0.637968, 1, 0.980682, 0.981036]
 alpha_0 = 0.637968; %0.65
@@ -98,14 +98,14 @@ plot(tRK4, T_bat_true, 'LineWidth', 2, 'LineStyle','--')
 legend(["model", "true"])
 
 %% Finding steady state
-omega_ss = 100;
+omega_ss = 0.875311 * 100;
 T_bat_ss = 20.5 + 273.15;
 I_ss = 0;
-
+Q_heat_ss = 0
 mdot_c_ss = density_coolant*pump_displacement*omega_ss;
 NTU_ss = alpha_3*hA_bat/(mdot_c_ss*c_coolant + 1e-3);
-T_cool_in_ss = (T_bat_ss + alpha_1*1/(1-exp(-NTU_ss))*u(2)/(mdot_c_ss*c_coolant + 1e-3));
+T_cool_in_ss = (T_bat_ss + alpha_1*1/(1-exp(-NTU_ss))*Q_heat_ss/(mdot_c_ss*c_coolant + 1e-3));
 T_cool_out_ss = ((T_cool_in_ss - T_bat_ss) * alpha_2*exp(-NTU_ss) + T_bat_ss);
 Q_cool_ss = mdot_c_ss * c_coolant * (T_cool_out_ss - T_cool_in_ss);
 f_ss = alpha_0/(m_battery*c_battery) * (I_ss^2*R_battery - Q_cool_ss + gamma*(T_env-T_bat_ss));
-q_heat_ss = double(solve(f_ss == 0, u(2)));
+%q_heat_ss = double(solve(f_ss == 0, u(2)));

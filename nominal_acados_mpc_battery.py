@@ -21,15 +21,23 @@ class BatteryDynamics:
     def __init__(self, T_env): # remove gym_env for cascaded tank
         self.T_env = T_env
     def model(self): # remove gym_env for cascaded tank
-
+        model = cs.types.SimpleNamespace()
+        model.omega_scale = 100
+        model.Q_heat_scale = 1000
         T_bat = cs.MX.sym('T_bat')
         SOC= cs.MX.sym('SOC')
         X = cs.vertcat(T_bat, SOC)
-        omega = cs.MX.sym('omega') # Power into heater/cooler given as efficiency*Pin
-        Q_heat = cs.MX.sym('Q_heat') # Pump control (rpm that is converted to kg/s)
+
+        omega_normalized = cs.MX.sym('omega_norm')
+        omega = model.omega_scale * omega_normalized #cs.MX.sym('omega') # Power into heater/cooler given as efficiency*Pin
+        Q_heat_normalized = cs.MX.sym('Q_heat_norm')
+        Q_heat = model.Q_heat_scale * Q_heat_normalized #cs.MX.sym('Q_heat') # Pump control (rpm that is converted to kg/s)
         current = cs.MX.sym('current')
+        
         nn_on = cs.MX.sym('nn_on') # Flip switch for whether on not to have the NN in the model (helps when NN not trained yet)
-        U = cs.vertcat(omega, Q_heat)
+        
+        U = cs.vertcat(omega_normalized, Q_heat_normalized)
+        
         nx = 2
         nu = 2
 
@@ -80,7 +88,7 @@ class BatteryDynamics:
         x_start = np.array([-10+CELSIUS_TO_KELVIN,1]) # initial constraint (gets overwritten)
 
         # store to struct
-        model = cs.types.SimpleNamespace()
+        
         model.x = X 
         model.xdot = cs.MX.sym('xdot', 2)
         model.u = U
@@ -91,6 +99,7 @@ class BatteryDynamics:
         model.x_start = x_start
         model.constraints = cs.vertcat([]) # add constraints here or in mpc?
         model.name = "battery_nominal"
+
         
         return model, constraint 
 
@@ -158,10 +167,10 @@ class MPC:
         #l4c_y_expr = None
 
         # Define weight parameters
-        Q = np.diag([10000, 0.1])
-        R = np.diag([0.0001, 0.0000001])
+        Q = np.diag([10, 0.1])
+        R = np.diag([1, 0.1])
         ocp.cost.W = scipy.linalg.block_diag(Q,R)
-
+        print(ocp.cost.W)
         # Initial state (will be overwritten?)
         ocp.cost.W_e = Q 
         ocp.cost.yref = np.zeros((ny, ))
@@ -171,20 +180,23 @@ class MPC:
         ocp.constraints.x0 = model.x_start
 
         # Set constraints
-        omega_max = 4000*2*np.pi/60
+        omega_max = (4000*2*np.pi/60)/model.omega_scale
         
-        omega_min = 150*2*np.pi/60
-        print(omega_min)
-        Q_heat_max = 4000
-        Q_heat_min = 0
+        omega_min = (150*2*np.pi/60)/model.omega_scale
+        print("omega max", omega_max)
+    
+        Q_heat_max = 4000/model.Q_heat_scale
+        print("Q_heat max", Q_heat_max)
+        Q_heat_min = 0/model.Q_heat_scale
         Tb_max = 50 + CELSIUS_TO_KELVIN
         Tb_min = -10 + CELSIUS_TO_KELVIN
         SOC_max = 1
         SOC_min = 0
         ocp.constraints.lbu = np.array([omega_min, Q_heat_min])
         ocp.constraints.ubu = np.array([omega_max, Q_heat_max])
+
         ocp.constraints.idxbu = np.array([0,1])
-        ocp.constraints.idxbx = np.array([0]) # at what indices to have constraints? 
+        ocp.constraints.idxbx = np.array([0]) # at what indices to have constraints
         ocp.constraints.ubx = np.array([Tb_max])
         ocp.constraints.lbx = np.array([Tb_min])
 
@@ -200,15 +212,15 @@ class MPC:
                 constraint.T_clout_max
             ]
         )
-        ocp.cost.zl = 10000000 * np.ones((ns,))
-        ocp.cost.zu = 10000000 * np.ones((ns,))
-        ocp.cost.Zl = 10000000* np.ones((ns,))
-        ocp.cost.Zu = 10000000 * np.ones((ns,))
+        ocp.cost.zl = 1000 * np.zeros((ns,))
+        ocp.cost.zu = 1000 * np.zeros((ns,))
+        ocp.cost.Zl = 1000* np.ones((ns,))
+        ocp.cost.Zu = 1000 * np.ones((ns,))
 
-        ocp.cost.zl_0 = 10000000 * np.ones((nsh+nsu,))
-        ocp.cost.zu_0 = 10000000 * np.ones((nsh+nsu,))
-        ocp.cost.Zl_0 = 10000000* np.ones((nsh+nsu,))
-        ocp.cost.Zu_0 = 10000000 * np.ones((nsh+nsu,))
+        ocp.cost.zl_0 = 1000 * np.zeros((nsh+nsu,))
+        ocp.cost.zu_0 = 1000 * np.zeros((nsh+nsu,))
+        ocp.cost.Zl_0 = 1000* np.ones((nsh+nsu,))
+        ocp.cost.Zu_0 = 1000 * np.ones((nsh+nsu,))
 
         ocp.constraints.lh = np.array(
         [
@@ -259,6 +271,7 @@ class MPC:
         model_ac.x = model.x
         model_ac.xdot = model.xdot
         model_ac.u = model.u
+        print(model_ac.u)
         model_ac.p = model.p
         model_ac.name = model.name
         model_ac.con_h_expr = constraint.expr
@@ -297,6 +310,8 @@ class Controller:
         self.data = []
         self.total_errors = 0
         self.total_cost = 0
+        self.omega_scale = casadi_model.omega_scale
+        self.Q_heat_scale = casadi_model.Q_heat_scale
         # Reading disturbance info
         df = pd.read_csv("current_intp1.csv", names=["current"])
         arr = df.to_numpy(dtype=np.float32)
@@ -306,7 +321,7 @@ class Controller:
     def get_input(self, T_bat_target, T_bat_0, SOC_0, current_0, dT_bat, dSOC):
        
         print("--------------------------------")
-        print("NOMINAL ACADOS MPC BATTERY MODEL WITH SLACK")
+        print("NOMINAL ACADOS MPC BATTERY MODEL SCALED")
         if self.current_iterate == 0:
             self.xt_pred = ([T_bat_0, SOC_0])
         disturbances = self.disturbance_values
@@ -346,14 +361,18 @@ class Controller:
 
         # Solve mpc and apply control
         self.solver.solve()
-        self.total_cost += self.solver.get_cost()/(1e8)
+        self.total_cost += self.solver.get_cost()
         # ut = solver.get(0, "u").item()
         ut = self.solver.get(0, "u")
-        slack_lower = self.solver.get(10, "sl")
-        slack_upper = self.solver.get(10, "su")
+        slack_lower = self.solver.get(0, "sl")
+        slack_upper = self.solver.get(0, "su")
         print("slack lower", slack_lower, "slack upper", slack_upper)
-        omega_value = ut[0].item()
-        Q_heat_value = ut[1].item()
+        
+        omega_value = self.omega_scale * ut[0].item()
+        Q_heat_value = self.Q_heat_scale * ut[1].item()
+        
+        ut_p1 = self.solver.get(1, "u")
+        print("inputs normalized", ut_p1)
         status = self.solver.get_status()
         if status != 0:
             print("ERROR", status, "at iterate", self.current_iterate)

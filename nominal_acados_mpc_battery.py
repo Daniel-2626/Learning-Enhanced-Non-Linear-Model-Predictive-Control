@@ -321,7 +321,8 @@ class Controller:
             # y_ref_k = np.array([Tb_ref, SOC_ref, 0])
             y_ref_k = np.array([T_bat_target, 0.0, 0.0, 0.0])
             self.solver.set(k, "yref", y_ref_k)
-            param_values = disturbances[k].item()
+            print(self.dt*(self.current_iterate + k))
+            param_values = disturbances[int(self.dt*(self.current_iterate + k))].item()
             self.solver.set(k, "p", param_values)
 
         # Set terminal reference
@@ -329,7 +330,7 @@ class Controller:
         y_ref_terminal = np.array([T_bat_target, 0.0]) # Terminal cost only on states so 2x1 instead of 4x1 above
         #print(y_ref_terminal)
         self.solver.set(self.N, "yref", y_ref_terminal)
-        param_values = disturbances[self.N].item()
+        param_values = disturbances[int(self.dt*(self.current_iterate + self.N))].item()
 
         self.solver.set(self.N, "p", param_values)
 

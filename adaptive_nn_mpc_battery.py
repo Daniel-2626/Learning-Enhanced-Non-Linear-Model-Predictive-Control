@@ -35,13 +35,23 @@ class BatteryLearnedDynamics:
     
     def model(self): # remove gym_env for cascaded tank
 
+        model = cs.types.SimpleNamespace()
+        omega_scale = 100
+        Q_heat_scale = 1000
+
         T_bat = cs.MX.sym('Tb')
         SOC= cs.MX.sym('SOC')
         X = cs.vertcat(T_bat, SOC)
-        omega = cs.MX.sym('omega') # Power into heater/cooler given as efficiency*Pin
-        Q_heat = cs.MX.sym('Q_heat') # Pump control (rpm that is converted to kg/s)
+
+        omega_normalized = cs.MX.sym('omega_norm') # Power into heater/cooler given as efficiency*Pin
+        omega = omega_scale * omega_normalized
+        Q_heat_normalized = cs.MX.sym('Q_heat_norm') # Pump control (rpm that is converted to kg/s)
+        Q_heat = Q_heat_scale * Q_heat_normalized
+        nn_on = cs.MX.sym('nn_on')
+
         current = cs.MX.sym('current')
-        U = cs.vertcat(omega, Q_heat)
+        U = cs.vertcat(omega_normalized, Q_heat_normalized)
+
         nx = 2
         nu = 2
 
@@ -59,8 +69,7 @@ class BatteryLearnedDynamics:
         mdot_c = density_coolant*pump_displacement*omega
         alpha1 = 0.99
         alpha2 = 0.97
-        
-
+       
 
         # Dynamics
         
@@ -93,10 +102,14 @@ class BatteryLearnedDynamics:
         model.f_expl = f_expl
         model.f_nominal = X_dot_nominal
         model.x_start = x_start
+        model.omega_scale = 100
+        model.Q_heat_scale = 1000
         # model.constraints = cs.vertcat([]) # add constraints here or in mpc?
 
         # Constraint expressions
+
         model.con_h_expr = cs.vertcat(T_clin, T_clout) 
+        model.con_h_expr_0 = cs.vertcat(T_clin, T_clout)
 
         model.name = "battery_learned"
 
@@ -130,6 +143,11 @@ class MPC:
         ny = nx + nu # Stage cost
         ny_e = nx # Terminal cost considers only states
         nh = 2  # Number of nonlinear constraints (Tcl_in and Tcl_out)
+        
+        nsh = nh
+        nsu = nu
+        nsx = 1
+        ns = nsx + nsu + nsh
 
         # Create ocp to formulate optim
         ocp = AcadosOcp()
@@ -139,9 +157,17 @@ class MPC:
         ocp.dims.nu = nu
         ocp.dims.ny = ny
         ocp.dims.nh = nh  # Set the number of nonlinear constraints
-
+        ocp.dims.nh_0 = nh  # Set the number of nonlinear constraints
+        ocp.dims.ns = ns
+        ocp.dims.nsbx = nsx
+        ocp.dims.nsbu = nsu
+        ocp.dims.nsh = nsh
+        ocp.dims.nsh_0 = nsh
+        ocp.dims.nsg = 0
+        ocp.dims.nsphi = 0
 
         ocp.solver_options.tf = t_horizon
+        ocp.solver_options.N_horizon = N 
 
         # initialize cost function
         ocp.cost.cost_type = 'LINEAR_LS'
@@ -159,9 +185,9 @@ class MPC:
         l4c_y_expr = None
 
         # Define weight parameters
-        Q = np.diag([10000, 0.1])
+        Q = np.diag([10, 0.1])
         # R = np.diag([0.0001, 0.0000001])
-        R = np.diag([0.01, 0.0001])
+        R = np.diag([1, 0.1])
         ocp.cost.W = scipy.linalg.block_diag(Q,R)
 
         # Initial state (will be overwritten?)
@@ -173,21 +199,23 @@ class MPC:
         ocp.constraints.x0 = model.x_start
 
         # Set constraints
-        omega_max = 4000*2*np.pi/60
-        omega_min = 1000*2*np.pi/60
-        Q_heat_max = 4000
-        Q_heat_min = 0
+        omega_max = (4000*2*np.pi/60) / model.omega_scale
+        omega_min = (1000*2*np.pi/60)  / model.omega_scale
+        Q_heat_max = 4000 / model.Q_heat_scale
+        Q_heat_min = 0 / model.Q_heat_scale
+
         Tb_max = 50 + CELSIUS_TO_KELVIN
-        Tb_min = -20 + CELSIUS_TO_KELVIN
+        Tb_min = -10 + CELSIUS_TO_KELVIN
         SOC_max = 1
         SOC_min = 0
-        Tcl_in_min = -20 + CELSIUS_TO_KELVIN
-        Tcl_out_min = -20 + CELSIUS_TO_KELVIN
+        Tcl_in_min = -10 + CELSIUS_TO_KELVIN
+        Tcl_out_min = -10 + CELSIUS_TO_KELVIN
         Tcl_in_max = 100 + CELSIUS_TO_KELVIN
         Tcl_out_max = 100 + CELSIUS_TO_KELVIN
 
         ocp.constraints.lbu = np.array([omega_min, Q_heat_min])
         ocp.constraints.ubu = np.array([omega_max, Q_heat_max])
+
         ocp.constraints.idxbu = np.array([0,1])
         ocp.constraints.idxbx = np.array([0]) # at what indices to have constraints? 
         ocp.constraints.ubx = np.array([Tb_max])
@@ -196,7 +224,25 @@ class MPC:
         # NONLINEAR CONSTRAINTS on Tcl_in and Tcl_out
         ocp.constraints.lh = np.array([Tcl_in_min, Tcl_out_min])
         ocp.constraints.uh = np.array([Tcl_in_max, Tcl_out_max])
+        ocp.constraints.lh_0 = np.array([Tcl_in_min, Tcl_out_min])
+        ocp.constraints.uh_0 = np.array([Tcl_in_max, Tcl_out_max])
 
+        slack_penalty = 1e4
+
+        ocp.cost.zl = slack_penalty * np.zeros((ns,))
+        ocp.cost.zu = slack_penalty * np.zeros((ns,))
+        ocp.cost.Zl = slack_penalty * np.ones((ns,))
+        ocp.cost.Zu = slack_penalty * np.ones((ns,))
+
+        ocp.cost.zl_0 = slack_penalty * np.zeros((nsh+nsu,))
+        ocp.cost.zu_0 = slack_penalty * np.zeros((nsh+nsu,))
+        ocp.cost.Zl_0 = slack_penalty * np.zeros((nsh+nsu,))
+        ocp.cost.Zu_0 = slack_penalty * np.zeros((nsh+nsu,))
+
+        ocp.constraints.idxsbx = np.array(range(nsx))
+        ocp.constraints.idxsbu = np.array(range(nsu))
+        ocp.constraints.idxsh = np.array(range(nsh))
+        ocp.constraints.idxsh_0 = np.array(range(nsh))
 
 
         # Solver options
@@ -208,7 +254,8 @@ class MPC:
         ocp.solver_options.model_external_shared_lib_name = self.external_shared_lib_name 
         
         # Will be overwritten
-        ocp.parameter_values = 0
+        # ocp.parameter_values = 0
+        ocp.parameter_values = np.zeros((2,))
 
         return ocp
 
@@ -221,6 +268,7 @@ class MPC:
         model_ac.u = model.u
         model_ac.p = model.p
         model_ac.con_h_expr = model.con_h_expr
+        model_ac.con_h_expr_0 = model.con_h_expr_0
         model_ac.name = model.name
         return model_ac
 
@@ -241,7 +289,7 @@ class Controller:
         
         # MPC Setup 
         self.N = 40
-        t_horizon = 40
+        t_horizon = 40*5
         learned_model = BatteryLearnedDynamics(l4c_residual)
       
         casadi_model = learned_model.model()
@@ -269,6 +317,8 @@ class Controller:
         self.data = []
         self.total_errors = 0
         self.total_cost = 0
+        self.omega_scale = casadi_model.omega_scale
+        self.Q_heat_scale = casadi_model.Q_heat_scale
         # Reading disturbance info
         df = pd.read_csv("current_intp1.csv", names=["current"])
         arr = df.to_numpy(dtype=np.float32)
@@ -280,12 +330,20 @@ class Controller:
         print("ADAPTIVE MPC")
         if self.current_iterate == 0:
             self.xt_pred = ([T_bat_0, SOC_0])
+
+        if self.current_iterate < self.T_warm_start:
+            print(f"WARM START PHASE: iteration {self.current_iterate} < {self.T_warm_start}")
+            omega_value, Q_heat_value = 4000*2*np.pi/60, 4000
+            self.xt_pred = np.array([T_bat_0, SOC_0])
+            self.current_iterate += 1
+            return omega_value, Q_heat_value, self.xt_pred[0]
+
         disturbances = self.disturbance_values
 
+        time_idx = int(self.dt * self.current_iterate)
+
         switch = self.current_iterate > self.T_update
 
-
-        switch = self.current_iterate > self.T_update
 
         # Set reference for each step in MPC horizon
         #print(disturbances[0], current_0)
@@ -296,19 +354,25 @@ class Controller:
             # Set terminal reference
             # y_ref_k = np.array([Tb_ref, SOC_ref, 0])
             y_ref_k = np.array([T_bat_target, 0.0, 0.0, 0.0])
-            self.solver.set(k, "yref", y_ref_k)
-            param_values = np.array([disturbances[k].item(),switch])
+
+            # Use proper time-based indexing
+            dist_idx = min(time_idx + k, len(disturbances)-1)
+            param_values = np.array([disturbances[dist_idx].item(), switch])
             self.solver.set(k, "p", param_values)
+
 
         # Set terminal reference
         # y_ref_terminal = np.array([Tb_ref, SOC_ref])
         y_ref_terminal = np.array([T_bat_target, 0.0]) # Terminal cost only on states so 2x1 instead of 4x1 above
         #print(y_ref_terminal)
         self.solver.set(self.N, "yref", y_ref_terminal)
-        param_values = np.array([disturbances[self.N].item(),switch])
 
+        # param_values = np.array([int(self.dt*(self.current_iterate + k))].item(), float(switch)])
+        # self.solver.set(self.N, "p", param_values)
+
+        dist_idx_terminal = min(time_idx + self.N, len(disturbances)-1)
+        param_values = np.array([disturbances[dist_idx_terminal].item(), switch])
         self.solver.set(self.N, "p", param_values)
-
 
         start = time.time()
         xt = np.array([T_bat_0,SOC_0])
@@ -319,14 +383,28 @@ class Controller:
         # Solve mpc and apply control
         self.solver.solve()
         self.total_cost += self.solver.get_cost()/(1e8)
+
+        
         # ut = solver.get(0, "u").item()
         ut = self.solver.get(0, "u")
-        omega_value = ut[0].item()
-        Q_heat_value = ut[1].item()
+
+        #Scale the outputs properly
+        omega_value = self.omega_scale * ut[0].item()
+        Q_heat_value = self.Q_heat_scale * ut[1].item()
+
+        slack_lower = self.solver.get(0, "sl")
+        slack_upper = self.solver.get(0, "su")
+        print("slack lower", slack_lower, "slack upper", slack_upper)
+
+        ut_p1 = self.solver.get(1, "u")
+        print("inputs normalized", ut_p1)
+
         status = self.solver.get_status()
+
         if status != 0:
             print("ERROR", status, "at iterate", self.current_iterate)
             self.total_errors += 1
+            
         #u_N = self.solver.get(10,'u')
         #print('slacking off input', u_N)
         dT_bat = 0
@@ -419,12 +497,9 @@ class Controller:
         elapsed = time.time() - start
         
         print("total errors", self.total_errors)
-        
-        self.current_iterate += 1
-        if self.current_iterate < self.T_warm_start:
-            omega_value, Q_heat_value = 4000*2*np.pi/60, 4000
         print(omega_value, Q_heat_value, self.xt_pred[0], T_bat_0, T_bat_target)
         print("cumulative cost", self.total_cost)
         print(elapsed, 'ms')
         print("--------------------------------")
+        self.current_iterate += 1
         return omega_value, Q_heat_value, self.xt_pred[0]

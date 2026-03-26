@@ -15,4 +15,5 @@ plot(time_steps, current_intp1, 'LineWidth',2)
 hold on 
 plot(time, current, 'LineStyle','--', 'LineWidth',2)
 %% Saving
-writematrix(current_intp1', "current_intp1.csv")
+current_intp1_repeated = repmat(current_intp1, 1,13)
+writematrix(current_intp1_repeated', "current_intp1.csv")

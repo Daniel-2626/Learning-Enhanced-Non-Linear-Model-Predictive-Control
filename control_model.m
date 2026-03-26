@@ -13,11 +13,11 @@ hA_bat = 2500;
 T_env = -10 + 273.15;
 
 %[0.637968, 1, 0.980682, 0.981036]
-alpha_0 = 0.637968; %0.65
-alpha_1 = 1; % 0.99 %0.998427 #0.99
-alpha_2 = 0.980682; % #0.999686 #.97
-alpha_3 = 0.981036; %
-gamma = 7.59853;
+alpha_0 = 0.635039; 
+alpha_1 = 0.915692; 
+alpha_2 = 0.919681;  
+alpha_3 = 1.47275;
+gamma = 7.38325;
 %%
 % u = w (omega, angular velocity)
 u = sym('u', [2;1]);
@@ -109,3 +109,32 @@ T_cool_out_ss = ((T_cool_in_ss - T_bat_ss) * alpha_2*exp(-NTU_ss) + T_bat_ss);
 Q_cool_ss = mdot_c_ss * c_coolant * (T_cool_out_ss - T_cool_in_ss);
 f_ss = alpha_0/(m_battery*c_battery) * (I_ss^2*R_battery - Q_cool_ss + gamma*(T_env-T_bat_ss));
 %q_heat_ss = double(solve(f_ss == 0, u(2)));
+
+%% Differentation
+% u = w (omega, angular velocity)
+omega_norm= sym('omega_norm');
+Q_heat_norm = sym('Q_heat_norm');
+U = [omega_norm; Q_heat_norm];
+Q_heat = 1000 * Q_heat_norm;
+omega = 100 * omega_norm;
+% x = [SOC; T_b]
+T_bat = sym('T_bat');
+% don't remember why but need to include time for some reason
+syms t real
+mdot_c = density_coolant*pump_displacement*omega;
+NTU = alpha_3*hA_bat/(mdot_c*c_coolant + 1e-3);
+T_cool_in = (T_bat + alpha_1*1/(1-exp(-NTU))*Q_heat/(mdot_c*c_coolant + 1e-3));
+T_cool_out = ((T_cool_in - T_bat) * alpha_2*exp(-NTU) + T_bat);
+Q_cool = mdot_c * c_coolant * (T_cool_out - T_cool_in);
+f = alpha_0/(m_battery*c_battery) * (- Q_cool + gamma*(T_env-T_bat));
+
+jac_f_T_bat = jacobian(f, T_bat);
+jac_f_Q_T_bat_numeric = double(subs(jac_f_T_bat, [T_bat, omega_norm, Q_heat_norm], [20.5+273.15, 1, 2.30]))
+
+jac_f_U = jacobian(f, U);
+jac_f_U_numeric = double(subs(jac_f_U, [T_bat, omega_norm, Q_heat_norm], [20.5+273.15, 1, 2.30]))
+A = jac_f_Q_T_bat_numeric;
+B = jac_f_U_numeric;
+Q = 10000;
+R = diag([1,1]);
+[P, K, L] = icare(A,B,Q,R);

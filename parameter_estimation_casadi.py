@@ -74,8 +74,8 @@ class Estimator:
         alpha_1 = ca.SX.sym("alpha_1")
         alpha_2 = ca.SX.sym("alpha_2")
         alpha_3 = ca.SX.sym("alpha_3")
-        alpha_min = 0.5 #0.8
-        alpha_max = 1 #1.2
+        alpha_min = np.array([0.5, 0.5, 0.5, 0.5]) #0.8
+        alpha_max = np.array([1.5,1,1,1.5]) #1.2
         alphas = ca.vertcat(alpha_0, alpha_1, alpha_2, alpha_3)
         n_alphas = alphas.numel()
 

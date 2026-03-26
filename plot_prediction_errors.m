@@ -1,20 +1,21 @@
-logged_data_nominal = load("pred_error_nominal.mat");
-outputs_nominal = logged_data_nominal.data;
-logged_data_lms = load("pred_error_lms.mat");
-outputs_lms = logged_data_lms.data;
+logged_data_nn = load("pred_error_nn.mat");
+outputs_nn = logged_data_nn.data;
+logged_data_no_nn = load("pred_error_no_nn.mat");
+outputs_no_nn = logged_data_no_nn.data;
 
-pred_error_nominal = outputs_nominal.Data(11:end);
-pred_error_lms = getElement(outputs_lms, "pred_err").Values.Data(11:end);
+pred_error_nn = abs(getElement(outputs_nn, "pred_error").Values.Data(1:end));
+pred_error_no_nn = abs(getElement(outputs_no_nn, "pred_error").Values.Data(1:end));
 
 
 
 %% Plotting
-tF = 2474; %time(end);
-dt = 1; %tF/10^(ceil(log10(length(tout))));
-t = (10:dt:tF)';
 
-plot(t, pred_error_nominal, 'LineWidth',2)
+[T, ~] = size(pred_error_nn);
+t = 0:30:30*(T-1)';
+plot(t, pred_error_no_nn, 'LineWidth',2)
 hold on
-plot(t, pred_error_lms, 'LineWidth',2)
-xline(1700-10,'-',{'Inputs start to','decrease'}, 'LineWidth', 2);
-legend(["Nominal", "LMS"])
+plot(t, pred_error_nn, 'LineWidth',2, 'LineStyle','--')
+yline(0)
+xline(300,'-',{'NN on after this point'}, 'LineWidth', 2);
+legend(["Nominal", "NN"])
+title("NN vs Nominal with timestep of 30 s")

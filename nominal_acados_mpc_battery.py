@@ -107,7 +107,7 @@ class BatteryDynamics:
     def optimization_problem_steady_state(self, t_horizon, T_env):
         # Works in normalized 
         Q = np.diag([10])
-        R = np.diag([1, 1])   
+        R = np.diag([1, 60])   
         T = np.diag([1000000,1000000])
 
 
@@ -356,7 +356,7 @@ class MPC:
 
         # Define weight parameters
         Q = np.diag([10, 0.1])
-        R = np.diag([1, 1])
+        R = np.diag([1, 60])
         ocp.cost.W = scipy.linalg.block_diag(Q,R)
         ocp.cost.W_e = Q 
         ocp.cost.yref = np.zeros((ny, ))
@@ -469,8 +469,8 @@ class Controller:
     def setup(self, T_bat_target, T_env):
 
         # MPC Setup 
-        self.N = 60
-        self.t_horizon = self.N*30
+        self.N = 240 
+        self.t_horizon = self.N*5
         model = BatteryDynamics()
       
         casadi_model, constraint = model.model(T_env=T_env)
@@ -578,7 +578,7 @@ class Controller:
         a = A
         b = B
         q = 10
-        r = np.diag([1,1])
+        r = np.diag([1,60])
         cost_to_go = scipy.linalg.solve_continuous_are(a = a, b = b, q = q, r = r).item()
         Q_e = np.diag([cost_to_go, 1])
         return Q_e
@@ -670,7 +670,7 @@ class Controller:
         self.current_last = current_0
 
  
-        elapsed = time.time() - start
+        elapsed = 1000*(time.time() - start)
         
         print("total errors", self.total_errors)
     

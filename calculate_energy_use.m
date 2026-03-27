@@ -25,12 +25,12 @@ heating_power_traditional_interp = interp1(time_traditional, heatingPwr_traditio
 T_bat_traditional_interp = interp1(time_traditional, T_bat_traditional, t);
 
 pump_power_mpc_interp = interp1(time_mpc, pump_power_mpc, t);
-time_mpc_heat_pwr = 0:5:2474;
-heating_power_mpc_interp = interp1(time_mpc_heat_pwr, heatingPwr_mpc, t,'previous', 'extrap');
+time_mpc_heat_pwr = 0:30:2474;
+heating_power_mpc_interp = interp1(time_mpc, heatingPwr_mpc, t,'previous', 'extrap');
 %heating_power_mpc_interp(isnan(heating_power_mpc_interp))=0;
 T_bat_mpc_interp = interp1(time_mpc, T_bat_mpc, t);
 
-plot(time_mpc_heat_pwr,heatingPwr_mpc)
+plot(time_mpc,heatingPwr_mpc)
 hold on
 plot(t,heating_power_mpc_interp, 'LineStyle','--')
 %% Riemman sum
@@ -43,8 +43,16 @@ pump_energy_mpc = hour_in_sec*sum(pump_power_mpc_interp);
 energy_mpc = heating_energy_mpc + pump_energy_mpc;
 
 %%
-plot(T_bat_mpc_interp)
+plot(t,T_bat_mpc_interp, 'LineWidth',6)
 hold on
-plot(T_bat_traditional_interp)
-yline(20.5-1)
-yline(20.5+1)
+plot(t,T_bat_traditional_interp, 'LineWidth',6)
+yline(20.5-1, 'LineWidth',6, 'LineStyle','--')
+yline(20.5, '-', 'Set-point', 'LineWidth',6, 'LabelHorizontalAlignment','left')
+yline(20.5+1, 'LineWidth',6, 'LineStyle','--')
+ytop = (20.5+1)*ones(1,2474);
+ybottom = (20.5-1)*ones(1,2474);
+patch([t, flip(t)], [ybottom, ytop], [0.5, 0.5, 0.5], 'EdgeColor', 'none', 'FaceAlpha', 0.3)
+axis([1000, 2474, 17, 23])
+legend("MPC", "Traditional")
+xlabel("Time (s)")
+ylabel(['Temperature (C' char(176) ')'])

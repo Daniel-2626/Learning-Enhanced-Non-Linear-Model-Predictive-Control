@@ -107,7 +107,7 @@ class BatteryDynamics:
     def optimization_problem_steady_state(self, t_horizon, T_env):
         # Works in normalized 
         Q = np.diag([10])
-        R = np.diag([1, 60])   
+        R = np.diag([1, 35])   
         T = np.diag([1000000,1000000])
 
 
@@ -356,7 +356,7 @@ class MPC:
 
         # Define weight parameters
         Q = np.diag([10, 0.1])
-        R = np.diag([1, 60])
+        R = np.diag([1,35])
         ocp.cost.W = scipy.linalg.block_diag(Q,R)
         ocp.cost.W_e = Q 
         ocp.cost.yref = np.zeros((ny, ))
@@ -469,8 +469,8 @@ class Controller:
     def setup(self, T_bat_target, T_env):
 
         # MPC Setup 
-        self.N = 240 
-        self.t_horizon = self.N*5
+        self.N =60 # 80
+        self.t_horizon = self.N*10
         model = BatteryDynamics()
       
         casadi_model, constraint = model.model(T_env=T_env)
@@ -578,7 +578,7 @@ class Controller:
         a = A
         b = B
         q = 10
-        r = np.diag([1,60])
+        r = np.diag([1,35])
         cost_to_go = scipy.linalg.solve_continuous_are(a = a, b = b, q = q, r = r).item()
         Q_e = np.diag([cost_to_go, 1])
         return Q_e
@@ -588,6 +588,13 @@ class Controller:
         print("NOMINAL ACADOS MPC BATTERY MODEL WITH TARGET TRACKING AND COST-TO-GO")
         if self.current_iterate == 0:
             self.xt_pred = ([T_bat_0, SOC_0])
+            # Warm start
+            omega_warm_start = (2000*2*np.pi/60)/self.omega_scale
+            Q_heat_warm_start = 2000/self.Q_heat_scale
+            input_warm_start = np.array([omega_warm_start, Q_heat_warm_start])
+            self.solver.set(0, 'u', input_warm_start) # Weird but this is how acados does warm starts. Does not "force" inputs to be this
+            state_warm_start = np.array([T_bat_0, SOC_0])
+            self.solver.set(0, 'x', state_warm_start)
         disturbances = self.disturbance_values
         T_env = self.T_env
         # Set reference for each step in MPC horizon
@@ -606,6 +613,7 @@ class Controller:
             self.solver.set(k, "yref", y_ref_k)
             # Potential for error
             # T_env must be in Kelvin
+            
             param_values = disturbances[int(self.dt*(self.current_iterate + k))].item()
             self.solver.set(k, "p", param_values)
 
@@ -615,7 +623,6 @@ class Controller:
         #print(y_ref_terminal)
         self.solver.set(self.N, "yref", y_ref_terminal)
         param_values = disturbances[int(self.dt*(self.current_iterate + self.N))].item()
-
         self.solver.set(self.N, "p", param_values)
 
         self.solver.cost_set(self.N, 'W', Q_e)
@@ -624,6 +631,7 @@ class Controller:
         xt = np.array([T_bat_0,SOC_0])
         #self.solver.set(0, "x", xt)
         
+    
 
         # Apply current state as constraint
         self.solver.set(0, "lbx", xt)
@@ -671,14 +679,14 @@ class Controller:
 
  
         elapsed = 1000*(time.time() - start)
-        
+        print(omega_value, Q_heat_value, self.xt_pred[0], T_bat_0, T_bat_target)
         print("total errors", self.total_errors)
-    
-        self.current_iterate += 1
         if (self.current_iterate * self.dt) < self.T_warm_start:
             omega_value, Q_heat_value = 4000*2*np.pi/60, 4000
-        
-        print(omega_value, Q_heat_value, self.xt_pred[0], T_bat_0, T_bat_target)
+         
+        self.current_iterate += 1
+
+   
         print("cumulative cost", self.total_cost)
         print(elapsed, 'ms')
         print("--------------------------------")

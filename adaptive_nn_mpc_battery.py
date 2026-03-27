@@ -491,15 +491,15 @@ class Controller:
         for param in residual_mlp.parameters():
             param.requires_grad = False
         self.residual_mlp = residual_mlp
-        self.residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-3) # lr = learning rate, the optimizer
+        self.residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-4) # lr = learning rate, the optimizer
         self.residual_criterion = nn.MSELoss()
 
         l4c_residual = l4c.L4CasADi(self.residual_mlp, name="battery", mutable=True)
         self.l4c_residual = l4c_residual
 
         # MPC Setup 
-        self.N = 60
-        self.t_horizon = self.N*30
+        self.N = 80
+        self.t_horizon = self.N*5
         learned_model = BatteryLearnedDynamics(l4c_residual)
       
         casadi_model, constraint = learned_model.model(T_env=T_env)
@@ -512,7 +512,7 @@ class Controller:
         # SOC_ref = None # This is not actually tracked
         self.dt = self.t_horizon/self.N
         self.obs_buffer = []
-        self.batch_size = 10
+        self.batch_size = 30
         self.T_update = 60 
         self.T_warm_start = 30
         self.current_iterate = 0
@@ -618,6 +618,8 @@ class Controller:
        
         print("--------------------------------")
         print("ADAPTIVE ACADOS MPC BATTERY MODEL WITH TARGET TRACKING AND COST-TO-GO")
+        start = time.time()
+
         if self.current_iterate == 0:
             self.xt_pred = ([T_bat_0, SOC_0])
         disturbances = self.disturbance_values
@@ -637,6 +639,7 @@ class Controller:
             # Set terminal reference
             # y_ref_k = np.array([Tb_ref, SOC_ref, 0])
             y_ref_k = np.array([T_bat_target, 0.0, omega_norm_ss, Q_heat_norm_ss])
+         
             self.solver.set(k, "yref", y_ref_k)
             # Potential for error
             # T_env must be in Kelvin
@@ -654,7 +657,6 @@ class Controller:
 
         self.solver.cost_set(self.N, 'W', Q_e)
 
-        start = time.time()
         xt = np.array([T_bat_0,SOC_0])
         #self.solver.set(0, "x", xt)
         
@@ -743,26 +745,29 @@ class Controller:
             self.obs_buffer.append((0, 0))
             self.data = [(0,0,0,0)]
 
-        # update every T_update time steps
+        # update every T_update = 60 
+        # T_warm_start = 30
         if (self.dt*self.current_iterate) > self.T_warm_start and ((self.dt*self.current_iterate) % self.T_update) == 0 and len(self.obs_buffer) >= self.batch_size:
-            self.nn_on = 0
+            self.nn_on = 1
             data = np.array(self.data[-self.batch_size:])
-            print(self.obs_buffer)
+            print("Length of data", data.size)
             obs = np.array(self.obs_buffer)
-            print(obs)
+            print("condition 1", self.dt*self.current_iterate, "condition 2", ((self.dt*self.current_iterate) % self.T_update), "condition 3",len(self.obs_buffer))
             # data[:, :3] h1, h2 and u
             X_batch = torch.tensor(data[:, :], dtype=torch.float32)
             # h1_dot, h2_dot
-            #print(data[-1])
-            y_true = obs[-self.batch_size, 0]
+            print(obs)
+            y_true = obs[-self.batch_size:, 0]
+            y_true = y_true.reshape((-1,1))
             #print(y_true)
         
             
 
             y_nominal = obs[-self.batch_size:, 1]
+            y_nominal = y_nominal.reshape((-1,1))
+
     
             y_target = torch.tensor(y_true - y_nominal, dtype=torch.float32)
-
             for p in self.residual_mlp.parameters(): p.requires_grad = True
             for _ in range(50):
                 self.residual_optimizer.zero_grad() # optimizer object
@@ -784,8 +789,8 @@ class Controller:
         self.current_last = current_0
 
  
-        elapsed = time.time() - start
-        
+        elapsed = 1000*(time.time() - start)
+        print("time", self.dt*self.current_iterate)
         print("total errors", self.total_errors)
     
         self.current_iterate += 1

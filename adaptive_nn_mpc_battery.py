@@ -82,9 +82,9 @@ class BatteryLearnedDynamics:
         T_clout = ((T_clin - T_bat) * alpha_2*np.exp(-NTU_bat) + T_bat)
         
         constraint = cs.types.SimpleNamespace()
-        constraint.T_clin_min = T_env 
+        constraint.T_clin_min = -20 + CELSIUS_TO_KELVIN 
         constraint.T_clin_max = 100 + CELSIUS_TO_KELVIN
-        constraint.T_clout_min = T_env
+        constraint.T_clout_min = -20 + CELSIUS_TO_KELVIN
         constraint.T_clout_max = 100 + CELSIUS_TO_KELVIN
         constraint.expr = cs.vertcat(T_clin, T_clout)
 
@@ -198,9 +198,9 @@ class BatteryLearnedDynamics:
         NTU_bat  = (alpha_3 * hA_bat) / (mdot_c*c_coolant + 1e-3)
         T_clin= (T_bat + alpha_1*(1/(1-cs.exp(-NTU_bat)))*Q_heat/(mdot_c*c_coolant + 1e-3))
         T_clout = ((T_clin - T_bat) * alpha_2*cs.exp(-NTU_bat) + T_bat)
-        T_clin_min = T_env
+        T_clin_min = -20 + CELSIUS_TO_KELVIN
         T_clin_max = 50 + CELSIUS_TO_KELVIN
-        T_clout_min = T_env 
+        T_clout_min = -20 + CELSIUS_TO_KELVIN 
         T_clout_max = 50 + CELSIUS_TO_KELVIN
         Q_cool = mdot_c*c_coolant*(T_clout - T_clin)
 
@@ -266,7 +266,7 @@ class BatteryLearnedDynamics:
             
         Q_heat_max = 4000/Q_heat_scale
         print("Q_heat max", Q_heat_max)
-        Q_heat_min = 0/Q_heat_scale
+        Q_heat_min = -4000/Q_heat_scale
 
         lbx = cs.DM.zeros((n_states*(N+1) + N*n_controls + N*n_slack, 1))
         ubx = cs.DM.zeros((n_states*(N+1) + N*n_controls + N*n_slack, 1)) # long column vector 
@@ -389,7 +389,7 @@ class MPC:
     
         Q_heat_max = 4000/model.Q_heat_scale
         print("Q_heat max", Q_heat_max)
-        Q_heat_min = 0/model.Q_heat_scale
+        Q_heat_min = -4000/model.Q_heat_scale
         Tb_max = 50 + CELSIUS_TO_KELVIN
         Tb_min = -20 + CELSIUS_TO_KELVIN
         SOC_max = 1
@@ -678,7 +678,7 @@ class Controller:
         omega_max = (4000*2*np.pi/60)
         omega_min = (150*2*np.pi/60)
         Q_heat_max = 4000
-        Q_heat_min = 0
+        Q_heat_min = -4000
         omega_value = min(self.omega_scale * ut[0].item(), omega_max)
         Q_heat_value = min(self.Q_heat_scale * ut[1].item(), Q_heat_max)
         omega_value = max(omega_value, omega_min)

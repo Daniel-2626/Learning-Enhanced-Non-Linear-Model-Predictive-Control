@@ -262,10 +262,8 @@ class BatteryLearnedDynamics:
         omega_max = (4000*2*np.pi/60)/omega_scale
             
         omega_min = (150*2*np.pi/60)/omega_scale
-        print("omega max", omega_max)
             
         Q_heat_max = 4000/Q_heat_scale
-        print("Q_heat max", Q_heat_max)
         Q_heat_min = -4000/Q_heat_scale
 
         lbx = cs.DM.zeros((n_states*(N+1) + N*n_controls + N*n_slack, 1))
@@ -279,7 +277,6 @@ class BatteryLearnedDynamics:
         ubx[-4] = omega_max
         ubx[-3] = Q_heat_max
         ubx[-2:] = 100
-        print(ubx)
         lg = cs.DM.zeros(4, 1)
         ug = cs.DM.zeros(4, 1)
 
@@ -517,10 +514,13 @@ class Controller:
         self.T_warm_start = 30
         self.current_iterate = 0
         self.xt_pred = np.array([CELSIUS_TO_KELVIN, 1])
+
         self.x_last = np.array([0,0])
         self.omega_last = 0
         self.Q_heat_last = 0
         self.current_last = 0
+        self.T_bat_last = 0
+        
         self.data = []
         self.total_errors = 0
         self.total_cost = 0
@@ -552,7 +552,6 @@ class Controller:
             ubg = args['ubg'],
             p = args['p']
         )
-        print(sol['x'])
         omega_norm_ss = sol['x'][2]
         Q_heat_norm_ss = sol['x'][3]
 
@@ -707,8 +706,16 @@ class Controller:
             # Not sure if should take current values or last, but figure that at this moment the change is happening because of the last values
             omega = self.omega_last
             Q_heat = self.Q_heat_last 
-            current = current_0
-            T_bat = T_bat_0
+            current = self.current_last
+            T_bat_k_minus_1 = self.T_bat_last
+            T_bat_k = T_bat_0
+
+            # Approximate derivative
+            dT_bat_euler = (T_bat_k - T_bat_k_minus_1)/self.dt
+            print("derivative read from model", dT_bat, "derivative euler step", dT_bat_euler)
+
+
+            # Caluclate derivative with model
             # Parameters
             m_battery = 20*2.5*4
             c_battery = 795
@@ -731,15 +738,15 @@ class Controller:
             
             # Get the cooler in and out temps
             NTU_bat  = (alpha_3*hA_bat) / (mdot_c*c_coolant + 1e-3)
-            T_clin= (T_bat + alpha_1*(1/(1-np.exp(-NTU_bat)))*Q_heat/(mdot_c*c_coolant + 1e-3))
-            T_clout = ((T_clin - T_bat) * alpha_2*np.exp(-NTU_bat) + T_bat)
+            T_clin= (self.T_bat_last + alpha_1*(1/(1-np.exp(-NTU_bat)))*Q_heat/(mdot_c*c_coolant + 1e-3))
+            T_clout = ((T_clin - self.T_bat_last) * alpha_2*np.exp(-NTU_bat) + self.T_bat_last)
           
             Q_cool = mdot_c*c_coolant*(T_clout - T_clin)
 
-            T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(self.T_env - T_bat))
-            print(dT_bat, T_bat_dot_model)
-            self.obs_buffer.append((dT_bat, T_bat_dot_model))
-            self.data.append((T_bat, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale))
+            T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(self.T_env - self.T_bat_last))
+
+            self.obs_buffer.append((dT_bat_euler, T_bat_dot_model))
+            self.data.append((self.T_bat_last, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale))
 
         else:
             self.obs_buffer.append((0, 0))
@@ -750,16 +757,12 @@ class Controller:
         if (self.dt*self.current_iterate) > self.T_warm_start and ((self.dt*self.current_iterate) % self.T_update) == 0 and len(self.obs_buffer) >= self.batch_size:
             self.nn_on = 1
             data = np.array(self.data[-self.batch_size:])
-            print("Length of data", data.size)
             obs = np.array(self.obs_buffer)
-            print("condition 1", self.dt*self.current_iterate, "condition 2", ((self.dt*self.current_iterate) % self.T_update), "condition 3",len(self.obs_buffer))
             # data[:, :3] h1, h2 and u
             X_batch = torch.tensor(data[:, :], dtype=torch.float32)
             # h1_dot, h2_dot
-            print(obs)
             y_true = obs[-self.batch_size:, 0]
             y_true = y_true.reshape((-1,1))
-            #print(y_true)
         
             
 
@@ -783,7 +786,7 @@ class Controller:
 
 
         self.xt_pred = np.array([pred[0].item(), pred[1].item()])
-        self.x_last = xt
+        self.T_bat_last = xt[0].item()
         self.omega_last = omega_value
         self.Q_heat_last = Q_heat_value
         self.current_last = current_0

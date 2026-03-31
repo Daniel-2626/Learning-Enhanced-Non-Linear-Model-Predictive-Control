@@ -25,7 +25,7 @@ plot(t, pred_error_nominal, 'LineWidth',2, 'LineStyle','--')
 
 yline(0)
 xline(180,'-',{'NN on after this point'}, 'LineWidth', 2, 'LabelHorizontalAlignment', 'left');
-legend(["Nominal", "NN"])
+legend(["NN", "Nominal"])
 title("NN vs Nominal with timestep of 30 s")
 
 %%

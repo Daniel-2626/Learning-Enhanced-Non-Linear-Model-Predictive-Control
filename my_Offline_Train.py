@@ -11,10 +11,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 import random
 
-#seed = 42
-#random.seed(seed)
-#np.random.seed(seed)
-#torch.manual_seed(seed)
+seed = 42
+random.seed(seed)
+np.random.seed(seed)
+torch.manual_seed(seed)
 # Load dataset of residuals
 csv_path = os.path.join(os.path.dirname(__file__), 'residuals.csv')
 df = pd.read_csv(csv_path)
@@ -44,7 +44,7 @@ def main():
     device = torch.device("cpu")
     
     # Hyperparameters
-    learning_rate = 1e-4
+    learning_rate = 1e-3
     input_dim = 4
     output_dim = 1
     hidden_dim = 128
@@ -69,7 +69,7 @@ def main():
         loss.backward() # calculates gradient
         residual_optimizer.step() # one optimization step to update parameters
     for p in residual_mlp.parameters(): p.requires_grad = False
-    torch.save(residual_mlp.state_dict(), "heating_model.pth")
+    torch.save(residual_mlp.state_dict(), "heating_model_2.pth")
 
     test_data = torch.tensor(X_test, dtype=torch.float32)
     residual_mlp.eval()

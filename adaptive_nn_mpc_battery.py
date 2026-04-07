@@ -484,11 +484,12 @@ class Controller:
     def setup(self, T_bat_target, T_env):
         
         # Residual MLP: Lightweight
-        residual_mlp = MLP(input_dim = 2 + 2, output_dim=1, hidden_dim=64, num_layers=3) # the network
+        residual_mlp = MLP(input_dim = 2 + 2, output_dim=1, hidden_dim=128, num_layers=4) # the network
         for param in residual_mlp.parameters():
             param.requires_grad = False
+        residual_mlp.load_state_dict(torch.load("heating_model.pth", weights_only=True))
         self.residual_mlp = residual_mlp
-        self.residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-4) # lr = learning rate, the optimizer
+        self.residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-3) # lr = learning rate, the optimizer
         self.residual_criterion = nn.MSELoss()
 
         l4c_residual = l4c.L4CasADi(self.residual_mlp, name="battery", mutable=True)
@@ -782,7 +783,7 @@ class Controller:
             print("UPDATE MODEL AT", self.dt*self.current_iterate)
             
             self.l4c_residual.update(self.residual_mlp)
-
+        
 
 
         self.xt_pred = np.array([pred[0].item(), pred[1].item()])
@@ -798,7 +799,11 @@ class Controller:
     
         self.current_iterate += 1
         if (self.current_iterate * self.dt) < self.T_warm_start:
-            omega_value, Q_heat_value = 4000*2*np.pi/60, 4000
+            if T_bat_0 > T_bat_target: # Cooling regime
+                omega_value, Q_heat_value = 4000*2*np.pi/60, -4000
+            else: # Heating regime
+                omega_value, Q_heat_value = 4000*2*np.pi/60, 4000
+
         
         print(omega_value, Q_heat_value, self.xt_pred[0], T_bat_0, T_bat_target)
         print("cumulative cost", self.total_cost)

@@ -496,6 +496,8 @@ class Controller:
         self.omega_scale = casadi_model.omega_scale
         self.Q_heat_scale = casadi_model.Q_heat_scale
         self.T_env = T_env
+
+        self.residual_dictionary = {'run': [], 'T_bat':[], 'current': [], 'omega_scaled':[], 'Q_heat_scaled':[], 'residual': []}
         # Reading disturbance info
         df = pd.read_csv("current_intp1.csv", names=["current"])
         arr = df.to_numpy(dtype=np.float32)
@@ -582,6 +584,59 @@ class Controller:
         cost_to_go = scipy.linalg.solve_continuous_are(a = a, b = b, q = q, r = r).item()
         Q_e = np.diag([cost_to_go, 1])
         return Q_e
+    def collect_data(self, T_bat_0, dT_bat):
+        # input and disturbance values (not symbolics because know what happened)
+        # Not sure if should take current values or last, but figure that at this moment the change is happening because of the last values
+        omega = self.omega_last
+        Q_heat = self.Q_heat_last 
+        current = self.current_last
+        T_bat_k_minus_1 = self.T_bat_last
+        T_bat_k = T_bat_0
+
+        # Approximate derivative
+        dT_bat_euler = (T_bat_k - T_bat_k_minus_1)/self.dt
+        
+
+        # Caluclate derivative with model
+        # Parameters
+        m_battery = 20*2.5*4
+        c_battery = 795
+        c_coolant = 3500
+        density_coolant = 1050
+            
+        pump_displacement = 1/(2*np.pi)*40/(100**3) # D parameter in simulink
+        R_battery = 4*20*0.0128 # Battery resistance
+        C_battery = 28*3600 # in coloumb
+        hA_bat = 2500
+
+        alpha_0 = 0.635039 #0.65
+        alpha_1 = 0.915692 # 0.99 #0.998427 #0.99
+        alpha_2 = 0.919681  #0.999686 #.97
+        alpha_3 = 1.47275
+        gamma = 7.38325
+            
+        mdot_c = density_coolant*pump_displacement*omega
+        # Dynamics
+            
+        # Get the cooler in and out temps
+        NTU_bat  = (alpha_3*hA_bat) / (mdot_c*c_coolant + 1e-3)
+        T_clin= (self.T_bat_last + alpha_1*(1/(1-np.exp(-NTU_bat)))*Q_heat/(mdot_c*c_coolant + 1e-3))
+        T_clout = ((T_clin - self.T_bat_last) * alpha_2*np.exp(-NTU_bat) + self.T_bat_last)
+          
+        Q_cool = mdot_c*c_coolant*(T_clout - T_clin)
+
+        T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(self.T_env - self.T_bat_last))
+        residual = dT_bat - T_bat_dot_model
+
+        self.obs_buffer.append((dT_bat_euler, T_bat_dot_model))
+        self.data.append((self.T_bat_last, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale))
+        self.residual_dictionary['run'].append(0)
+        self.residual_dictionary['T_bat'].append(self.T_bat_last)
+        self.residual_dictionary['current'].append(current)
+        self.residual_dictionary['omega_scaled'].append(omega/self.omega_scale)
+        self.residual_dictionary['Q_heat_scaled'].append(Q_heat/self.Q_heat_scale)
+        self.residual_dictionary['residual'].append(residual)
+
     def get_input(self, T_bat_target, T_bat_0, SOC_0, current_0, dT_bat, dSOC):
        
         print("--------------------------------")
@@ -664,6 +719,12 @@ class Controller:
         #u_N = self.solver.get(10,'u')
         #print('slacking off input', u_N)
         
+        if self.current_iterate > 0:
+            self.collect_data(T_bat_0, dT_bat)
+  
+        if self.dt*self.current_iterate >= 2470:
+            df = pd.DataFrame(data=self.residual_dictionary)
+            df.to_csv("residuals.csv", index=False)
         # Want to compare prediction at time step 0 with value at time step 1
         # So delay update of xt pred
         if self.current_iterate > 0:
@@ -676,14 +737,18 @@ class Controller:
         self.omega_last = omega_value
         self.Q_heat_last = Q_heat_value
         self.current_last = current_0
+        self.T_bat_last = T_bat_0
 
  
         elapsed = 1000*(time.time() - start)
         print(omega_value, Q_heat_value, self.xt_pred[0], T_bat_0, T_bat_target)
         print("total errors", self.total_errors)
         if (self.current_iterate * self.dt) < self.T_warm_start:
-            omega_value, Q_heat_value = 4000*2*np.pi/60, 4000
-         
+            if T_bat_0 > T_bat_target: # Cooling regime
+                omega_value, Q_heat_value = 4000*2*np.pi/60, -4000
+            else: # Heating regime
+                omega_value, Q_heat_value = 4000*2*np.pi/60, 4000
+ 
         self.current_iterate += 1
 
    

@@ -1,6 +1,6 @@
-logged_data_nn = load("pred_error_nn.mat");
+logged_data_nn = load("pred_error_nn_specific_heat.mat");
 outputs_nn = logged_data_nn.data;
-logged_data_no_nn = load("pred_error_nominal.mat");
+logged_data_no_nn = load("pred_error_nominal_specific_heat.mat");
 outputs_no_nn = logged_data_no_nn.data;
 
 pred_error_nn = abs(getElement(outputs_nn, "pred_error").Values.Data(1:end));
@@ -33,3 +33,4 @@ figure(2)
 plot(Q_heat_nn)
 hold on
 plot(Q_heat_nominal)
+legend("NN", "NOMINAL")

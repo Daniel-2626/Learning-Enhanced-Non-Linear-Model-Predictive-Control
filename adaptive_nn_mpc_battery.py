@@ -96,7 +96,9 @@ class BatteryLearnedDynamics:
         X_dot_nominal = cs.vertcat(T_bat_dot_model, SOC_dot_model)
 
         # MLP network
-        mlp_input = cs.vertcat(T_bat, current, U)
+        #mlp_input = cs.vertcat(T_bat, current, U)
+        mlp_input = cs.vertcat(T_bat, current, Q_cool, U)
+        
         residual = self.residual_model(mlp_input.T).T 
         X_dot_residual = cs.vertcat(residual[0], 0) # x1 dot and x2 dot residual
         
@@ -484,10 +486,10 @@ class Controller:
     def setup(self, T_bat_target, T_env):
         
         # Residual MLP: Lightweight
-        residual_mlp = MLP(input_dim = 2 + 2, output_dim=1, hidden_dim=128, num_layers=4) # the network
+        residual_mlp = MLP(input_dim = 2 + 3, output_dim=1, hidden_dim=128, num_layers=4) # the network
         for param in residual_mlp.parameters():
             param.requires_grad = False
-        residual_mlp.load_state_dict(torch.load("heating_model.pth", weights_only=True))
+        residual_mlp.load_state_dict(torch.load("heating_model_Q_cool.pth", weights_only=True))
         self.residual_mlp = residual_mlp
         self.residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-3) # lr = learning rate, the optimizer
         self.residual_criterion = nn.MSELoss()
@@ -510,8 +512,8 @@ class Controller:
         # SOC_ref = None # This is not actually tracked
         self.dt = self.t_horizon/self.N
         self.obs_buffer = []
-        self.batch_size = 30
-        self.T_update = 60 
+        self.batch_size = 30 #30
+        self.T_update = self.batch_size*self.dt
         self.T_warm_start = 30
         self.current_iterate = 0
         self.xt_pred = np.array([CELSIUS_TO_KELVIN, 1])
@@ -747,7 +749,8 @@ class Controller:
             T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(self.T_env - self.T_bat_last))
 
             self.obs_buffer.append((dT_bat_euler, T_bat_dot_model))
-            self.data.append((self.T_bat_last, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale))
+            self.data.append((self.T_bat_last, current, Q_cool, omega/self.omega_scale, Q_heat/self.Q_heat_scale))
+            #self.data.append((self.T_bat_last, current, Q_cool))
 
         else:
             self.obs_buffer.append((0, 0))
@@ -773,7 +776,7 @@ class Controller:
     
             y_target = torch.tensor(y_true - y_nominal, dtype=torch.float32)
             for p in self.residual_mlp.parameters(): p.requires_grad = True
-            for _ in range(50):
+            for _ in range(200):
                 self.residual_optimizer.zero_grad() # optimizer object
                 prediction = self.residual_mlp(X_batch) # gives data to network to make a prediction
                 loss = self.residual_criterion(prediction, y_target)
@@ -786,11 +789,7 @@ class Controller:
         
 
 
-        self.xt_pred = np.array([pred[0].item(), pred[1].item()])
-        self.T_bat_last = xt[0].item()
-        self.omega_last = omega_value
-        self.Q_heat_last = Q_heat_value
-        self.current_last = current_0
+       
 
  
         elapsed = 1000*(time.time() - start)
@@ -804,7 +803,11 @@ class Controller:
             else: # Heating regime
                 omega_value, Q_heat_value = 4000*2*np.pi/60, 4000
 
-        
+        self.xt_pred = np.array([pred[0].item(), pred[1].item()])
+        self.T_bat_last = T_bat_0 # Changed from xt[0], should be the same but for sanity
+        self.omega_last = omega_value
+        self.Q_heat_last = Q_heat_value
+        self.current_last = current_0
         print(omega_value, Q_heat_value, self.xt_pred[0], T_bat_0, T_bat_target)
         print("cumulative cost", self.total_cost)
         print(elapsed, 'ms')

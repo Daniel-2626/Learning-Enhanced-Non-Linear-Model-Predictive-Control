@@ -1,6 +1,6 @@
-logged_data_nn = load("pred_error_nn_specific_heat.mat");
+logged_data_nn = load("pred_error_nn_steady_state.mat");
 outputs_nn = logged_data_nn.data;
-logged_data_no_nn = load("pred_error_nominal_specific_heat.mat");
+logged_data_no_nn = load("pred_error_nominal_steady_state.mat");
 outputs_no_nn = logged_data_no_nn.data;
 
 pred_error_nn = abs(getElement(outputs_nn, "pred_error").Values.Data(1:end));

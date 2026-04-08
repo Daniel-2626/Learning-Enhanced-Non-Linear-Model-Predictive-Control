@@ -19,10 +19,11 @@ torch.manual_seed(seed)
 csv_path = os.path.join(os.path.dirname(__file__), 'residuals.csv')
 df = pd.read_csv(csv_path)
 
-input_data = df[['T_bat', 'current', 'omega_scaled', 'Q_heat_scaled']].to_numpy()
+input_data = df[['T_bat', 'current', 'Q_cool', 'omega_scaled', 'Q_heat_scaled']].to_numpy()
+print(input_data)
 residuals = df[['residual']].to_numpy()
 
-X_train, X_test, y_train, y_test = train_test_split(input_data, residuals, test_size=0.5)
+X_train, X_test, y_train, y_test = train_test_split(input_data, residuals, test_size=0.2)
 
 
 # MLP model definition
@@ -45,7 +46,7 @@ def main():
     
     # Hyperparameters
     learning_rate = 1e-3
-    input_dim = 4
+    input_dim = 5
     output_dim = 1
     hidden_dim = 128
     num_layers = 4
@@ -69,7 +70,7 @@ def main():
         loss.backward() # calculates gradient
         residual_optimizer.step() # one optimization step to update parameters
     for p in residual_mlp.parameters(): p.requires_grad = False
-    torch.save(residual_mlp.state_dict(), "heating_model_2.pth")
+    torch.save(residual_mlp.state_dict(), "heating_model_Q_cool.pth")
 
     test_data = torch.tensor(X_test, dtype=torch.float32)
     residual_mlp.eval()

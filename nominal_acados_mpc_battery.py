@@ -497,7 +497,9 @@ class Controller:
         self.Q_heat_scale = casadi_model.Q_heat_scale
         self.T_env = T_env
 
-        self.residual_dictionary = {'run': [], 'T_bat':[], 'current': [], 'omega_scaled':[], 'Q_heat_scaled':[], 'residual': []}
+        #self.residual_dictionary = {'run': [], 'T_bat':[], 'current': [], 'omega_scaled':[], 'Q_heat_scaled':[], 'residual': []}
+        self.residual_dictionary = {'run': [], 'T_bat':[], 'current': [], 'omega_scaled': [], 'Q_heat_scaled': [], 'Q_cool':[], 'residual': []}
+        
         # Reading disturbance info
         df = pd.read_csv("current_intp1.csv", names=["current"])
         arr = df.to_numpy(dtype=np.float32)
@@ -633,6 +635,7 @@ class Controller:
         self.residual_dictionary['run'].append(0)
         self.residual_dictionary['T_bat'].append(self.T_bat_last)
         self.residual_dictionary['current'].append(current)
+        self.residual_dictionary['Q_cool'].append(Q_cool)
         self.residual_dictionary['omega_scaled'].append(omega/self.omega_scale)
         self.residual_dictionary['Q_heat_scaled'].append(Q_heat/self.Q_heat_scale)
         self.residual_dictionary['residual'].append(residual)
@@ -719,12 +722,7 @@ class Controller:
         #u_N = self.solver.get(10,'u')
         #print('slacking off input', u_N)
         
-        if self.current_iterate > 0:
-            self.collect_data(T_bat_0, dT_bat)
-  
-        if self.dt*self.current_iterate >= 2470:
-            df = pd.DataFrame(data=self.residual_dictionary)
-            df.to_csv("residuals.csv", index=False)
+        
         # Want to compare prediction at time step 0 with value at time step 1
         # So delay update of xt pred
         if self.current_iterate > 0:
@@ -732,16 +730,10 @@ class Controller:
         else:
             pred_error = 0
         pred = self.solver.get(1, 'x')
-        self.xt_pred = np.array([pred[0].item(), pred[1].item()])
-        self.x_last = xt
-        self.omega_last = omega_value
-        self.Q_heat_last = Q_heat_value
-        self.current_last = current_0
-        self.T_bat_last = T_bat_0
+        
 
  
         elapsed = 1000*(time.time() - start)
-        print(omega_value, Q_heat_value, self.xt_pred[0], T_bat_0, T_bat_target)
         print("total errors", self.total_errors)
         if (self.current_iterate * self.dt) < self.T_warm_start:
             if T_bat_0 > T_bat_target: # Cooling regime
@@ -749,10 +741,24 @@ class Controller:
             else: # Heating regime
                 omega_value, Q_heat_value = 4000*2*np.pi/60, 4000
  
-        self.current_iterate += 1
+        self.xt_pred = np.array([pred[0].item(), pred[1].item()])
+        self.x_last = xt
+        self.omega_last = omega_value
+        self.Q_heat_last = Q_heat_value
+        self.current_last = current_0
+        self.T_bat_last = T_bat_0
+        if self.current_iterate > 0:
+            self.collect_data(T_bat_0, dT_bat)
+  
+        if self.dt*self.current_iterate >= 2470:
+            df = pd.DataFrame(data=self.residual_dictionary)
+            df.to_csv("residuals.csv", index=False)
+        
+        print(omega_value, Q_heat_value, self.xt_pred[0], T_bat_0, T_bat_target)
 
-   
         print("cumulative cost", self.total_cost)
         print(elapsed, 'ms')
         print("--------------------------------")
+        self.current_iterate += 1
+
         return omega_value, Q_heat_value, self.xt_pred[0], pred_error

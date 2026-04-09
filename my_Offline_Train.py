@@ -18,17 +18,19 @@ torch.manual_seed(seed)
 # Load dataset of residuals
 csv_path = os.path.join(os.path.dirname(__file__), 'residuals.csv')
 df = pd.read_csv(csv_path)
-
-input_data = df[['T_bat', 'current', 'Q_cool', 'omega_scaled', 'Q_heat_scaled']].to_numpy()
+print(df.head())
+input_data = df[['T_bat', 'current', 'omega_scaled', 'Q_heat_scaled']].to_numpy()
+#input_data = df[['h1', 'h2', 'u']].to_numpy()
 print(input_data)
+#residuals = df[['residual_1', 'residual_2']].to_numpy()
 residuals = df[['residual']].to_numpy()
 
-X_train, X_test, y_train, y_test = train_test_split(input_data, residuals, test_size=0.2)
+X_train, X_test, y_train, y_test = train_test_split(input_data, residuals, test_size=0.5)
 
 
 # MLP model definition
 class MLP(nn.Module):
-    def __init__(self, input_dim=4, output_dim=2, hidden_dim=64, num_layers=3):
+    def __init__(self, input_dim=4, output_dim=2, hidden_dim=16, num_layers=3):
         super().__init__()
         layers = [nn.Linear(input_dim, hidden_dim), nn.ReLU()]
         
@@ -46,10 +48,10 @@ def main():
     
     # Hyperparameters
     learning_rate = 1e-3
-    input_dim = 5
+    input_dim = 4
     output_dim = 1
-    hidden_dim = 128
-    num_layers = 4
+    hidden_dim = 32
+    num_layers = 3
 
     model = MLP(input_dim=input_dim, output_dim=output_dim, hidden_dim=hidden_dim, num_layers=num_layers).to(device)
     residual_mlp = MLP(input_dim = input_dim, output_dim=output_dim, hidden_dim=hidden_dim, num_layers=num_layers) # the network
@@ -63,14 +65,17 @@ def main():
     y_target = torch.tensor(y_train, dtype=torch.float32)
 
     for p in residual_mlp.parameters(): p.requires_grad = True
-    for _ in range(1000):
+    for _ in range(200):
         residual_optimizer.zero_grad() # optimizer object
         prediction = residual_mlp(X_batch) # gives data to network to make a prediction
         loss = residual_criterion(prediction, y_target)
+        l2_norm = sum(p.pow(2).sum() for p in residual_mlp.parameters())
+        regularization = 10
+        loss += regularization * l2_norm
         loss.backward() # calculates gradient
         residual_optimizer.step() # one optimization step to update parameters
     for p in residual_mlp.parameters(): p.requires_grad = False
-    torch.save(residual_mlp.state_dict(), "heating_model_Q_cool.pth")
+    torch.save(residual_mlp.state_dict(), "heating_pretrain.pth")
 
     test_data = torch.tensor(X_test, dtype=torch.float32)
     residual_mlp.eval()
@@ -81,6 +86,7 @@ def main():
     print(y_test.size)
     len_test = len(y_test)
     null_prediction = np.zeros((len_test,))
+    print("average", np.mean(residuals))
     print("MSE", mse)
     mse_null_hypothesis = mean_squared_error(y_test, null_prediction)
     print("MSE null hypothesis", mse_null_hypothesis)

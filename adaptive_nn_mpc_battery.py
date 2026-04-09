@@ -65,13 +65,18 @@ class BatteryLearnedDynamics:
         hA_bat = 2500
 
         
-
-        #[0.637968, 1, 0.980682, 0.981036]
-        alpha_0 = 0.635039 #0.65
-        alpha_1 = 0.915692 # 0.99 #0.998427 #0.99
-        alpha_2 = 0.919681  #0.999686 #.97
-        alpha_3 = 1.47275
-        gamma = 7.38325
+        # Identified
+        alpha_0 = 0.635039 # 0.637968 
+        alpha_1 = 0.915692 # 1 
+        alpha_2 = 0.919681 # 0.980682  
+        alpha_3 = 1.47275 # 0.981036
+        gamma = 7.38325 # 7.
+        # Arbitrary
+        #alpha_0 = 1.73 # 1.4 # arbitrary
+        #alpha_1 = 1.8 # 1 
+        #alpha_2 = 4 # 0.980682  
+        #alpha_3 = 1.3 # 0.981036
+        #gamma = 30 # 7.
         
         mdot_c = density_coolant*pump_displacement*omega
         # Dynamics
@@ -97,7 +102,7 @@ class BatteryLearnedDynamics:
 
         # MLP network
         #mlp_input = cs.vertcat(T_bat, current, U)
-        mlp_input = cs.vertcat(T_bat, current, Q_cool, U)
+        mlp_input = cs.vertcat(T_bat, current, U)
         
         residual = self.residual_model(mlp_input.T).T 
         X_dot_residual = cs.vertcat(residual[0], 0) # x1 dot and x2 dot residual
@@ -120,18 +125,17 @@ class BatteryLearnedDynamics:
 
         
         return model, constraint 
-    def optimization_problem_steady_state(self, t_horizon, T_env):
+    def optimization_problem_steady_state(self, dt, T_env):
         # Works in normalized 
-        Q = np.diag([10])
+        Q = np.diag([100])
         R = np.diag([1, 1])   
         T = np.diag([1000000,1000000])
 
 
         N = 1 # number of look ahead steps
 
-        t_horizon = t_horizon 
         t_env = T_env
-        step_horizon = t_horizon/N # time between steps in seconds
+        step_horizon = dt# time between steps in seconds
 
         # Constraints
         T_bat_max = 50 + CELSIUS_TO_KELVIN
@@ -187,11 +191,18 @@ class BatteryLearnedDynamics:
         R_battery = 4*20*0.0128 # Battery resistance
         C_battery = 28*3600 # in coloumb
         hA_bat = 2500
+        # Identified
         alpha_0 = 0.635039 # 0.637968 
         alpha_1 = 0.915692 # 1 
         alpha_2 = 0.919681 # 0.980682  
         alpha_3 = 1.47275 # 0.981036
-        gamma = 7.38325 # 7.59853
+        gamma = 7.38325 # 7.
+        # Arbitrary
+        #alpha_0 = 0.79 # 1.4 # arbitrary
+        #alpha_1 = 0.8 # 1 
+        #alpha_2 = 1 # 0.980682  
+        #alpha_3 = 0.3 # 0.981036
+        #gamma = 30 # 7.
 
         # column vector for storing disturbances 
         P = cs.SX.sym('P', n_disturbances)
@@ -370,7 +381,7 @@ class MPC:
         l4c_y_expr = None
 
         # Define weight parameters
-        Q = np.diag([10, 0.1])
+        Q = np.diag([100, 0.1])
         R = np.diag([1, 1])
         ocp.cost.W = scipy.linalg.block_diag(Q,R)
         ocp.cost.W_e = Q 
@@ -486,10 +497,10 @@ class Controller:
     def setup(self, T_bat_target, T_env):
         
         # Residual MLP: Lightweight
-        residual_mlp = MLP(input_dim = 2 + 3, output_dim=1, hidden_dim=128, num_layers=4) # the network
+        residual_mlp = MLP(input_dim = 2 + 2, output_dim=1, hidden_dim=32, num_layers=3) # the network
         for param in residual_mlp.parameters():
             param.requires_grad = False
-        residual_mlp.load_state_dict(torch.load("heating_model_Q_cool.pth", weights_only=True))
+        residual_mlp.load_state_dict(torch.load("heating_pretrain.pth", weights_only=True))
         self.residual_mlp = residual_mlp
         self.residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-3) # lr = learning rate, the optimizer
         self.residual_criterion = nn.MSELoss()
@@ -536,7 +547,7 @@ class Controller:
         arr = df.to_numpy(dtype=np.float32)
         self.disturbance_values = arr
 
-        self.steady_state_solver, self.steady_state_args = learned_model.optimization_problem_steady_state(t_horizon=self.t_horizon, T_env=T_env)
+        self.steady_state_solver, self.steady_state_args = learned_model.optimization_problem_steady_state(dt=self.dt, T_env=T_env)
         
     def get_steady_state(self, T_bat_target):
         
@@ -580,11 +591,18 @@ class Controller:
         C_battery = 28*3600 # in coloumb
         hA_bat = 2500        
 
+        # Identified
         alpha_0 = 0.635039 # 0.637968 
         alpha_1 = 0.915692 # 1 
         alpha_2 = 0.919681 # 0.980682  
         alpha_3 = 1.47275 # 0.981036
-        gamma = 7.38325 # 7.59853
+        gamma = 7.38325 # 7.
+        # Arbitrary
+        #alpha_0 = 0.79 # 1.4 # arbitrary
+        #alpha_1 = 0.8 # 1 
+        #alpha_2 = 1 # 0.980682  
+        #alpha_3 = 0.3 # 0.981036
+        #gamma = 30 # 7.
                 
         mdot_c = density_coolant*pump_displacement*omega
         # Dynamics
@@ -611,7 +629,7 @@ class Controller:
 
         a = A
         b = B
-        q = 10
+        q = 100
         r = np.diag([1,1])
         cost_to_go = scipy.linalg.solve_continuous_are(a = a, b = b, q = q, r = r).item()
         Q_e = np.diag([cost_to_go, 1])
@@ -623,7 +641,17 @@ class Controller:
         start = time.time()
 
         if self.current_iterate == 0:
-            self.xt_pred = ([T_bat_0, SOC_0])
+            self.xt_pred = ([T_bat_0, SOC_0])       
+            # Warm start
+            omega_warm_start = (2000*2*np.pi/60)/self.omega_scale
+            if T_bat_0 <= 20.5:
+                Q_heat_warm_start = 2000/self.Q_heat_scale
+            else:
+                Q_heat_warm_start = -2000/self.Q_heat_scale
+            input_warm_start = np.array([omega_warm_start, Q_heat_warm_start])
+            self.solver.set(0, 'u', input_warm_start) # Weird but this is how acados does warm starts. Does not "force" inputs to be this
+            state_warm_start = np.array([T_bat_0, SOC_0])
+            self.solver.set(0, 'x', state_warm_start)
         disturbances = self.disturbance_values
         T_env = self.T_env
         # Set reference for each step in MPC horizon
@@ -749,7 +777,7 @@ class Controller:
             T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(self.T_env - self.T_bat_last))
 
             self.obs_buffer.append((dT_bat_euler, T_bat_dot_model))
-            self.data.append((self.T_bat_last, current, Q_cool, omega/self.omega_scale, Q_heat/self.Q_heat_scale))
+            self.data.append((self.T_bat_last, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale))
             #self.data.append((self.T_bat_last, current, Q_cool))
 
         else:
@@ -780,6 +808,9 @@ class Controller:
                 self.residual_optimizer.zero_grad() # optimizer object
                 prediction = self.residual_mlp(X_batch) # gives data to network to make a prediction
                 loss = self.residual_criterion(prediction, y_target)
+                l2_norm = sum(p.pow(2).sum() for p in self.residual_mlp.parameters())
+                regularization = 1
+                loss += regularization * l2_norm
                 loss.backward() # calculates gradient
                 self.residual_optimizer.step() # one optimization step to update parameters
             for p in self.residual_mlp.parameters(): p.requires_grad = False

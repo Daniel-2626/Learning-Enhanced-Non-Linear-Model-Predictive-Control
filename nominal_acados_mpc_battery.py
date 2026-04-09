@@ -57,12 +57,18 @@ class BatteryDynamics:
 
         
 
-        #[0.637968, 1, 0.980682, 0.981036]
-        alpha_0 = 0.635039 #0.65
-        alpha_1 = 0.915692 # 0.99 #0.998427 #0.99
-        alpha_2 = 0.919681  #0.999686 #.97
-        alpha_3 = 1.47275
-        gamma = 7.38325
+        # Identified
+        alpha_0 = 0.635039 # 0.637968 
+        alpha_1 = 0.915692 # 1 
+        alpha_2 = 0.919681 # 0.980682  
+        alpha_3 = 1.47275 # 0.981036
+        gamma = 7.38325 # 7.
+        # Arbitrary
+        #alpha_0 = 0.3 # 1.4 # arbitrary
+        #alpha_1 = 0.8 # 1 
+        #alpha_2 = 1 # 0.980682  
+        #alpha_3 = 2 # 0.981036
+        #gamma = 5 # 7.
         
         mdot_c = density_coolant*pump_displacement*omega
         # Dynamics
@@ -104,18 +110,17 @@ class BatteryDynamics:
 
         
         return model, constraint 
-    def optimization_problem_steady_state(self, t_horizon, T_env):
+    def optimization_problem_steady_state(self, dt, T_env):
         # Works in normalized 
-        Q = np.diag([10])
+        Q = np.diag([100])
         R = np.diag([1, 1])   
         T = np.diag([1000000,1000000])
 
 
         N = 1 # number of look ahead steps
 
-        t_horizon = t_horizon 
         t_env = T_env
-        step_horizon = t_horizon/N # time between steps in seconds
+        step_horizon = dt # time between steps in seconds
 
         # Constraints
         T_bat_max = 50 + CELSIUS_TO_KELVIN
@@ -171,12 +176,18 @@ class BatteryDynamics:
         R_battery = 4*20*0.0128 # Battery resistance
         C_battery = 28*3600 # in coloumb
         hA_bat = 2500
+        # Identified
         alpha_0 = 0.635039 # 0.637968 
         alpha_1 = 0.915692 # 1 
         alpha_2 = 0.919681 # 0.980682  
         alpha_3 = 1.47275 # 0.981036
-        gamma = 7.38325 # 7.59853
-
+        gamma = 7.38325 # 7.
+        # Arbitrary
+        #alpha_0 = 0.3 # 1.4 # arbitrary
+        #alpha_1 = 0.8 # 1 
+        #alpha_2 = 1 # 0.980682  
+        #alpha_3 = 2 # 0.981036
+        #gamma = 5 # 7.
         # column vector for storing disturbances 
         P = cs.SX.sym('P', n_disturbances)
 
@@ -355,7 +366,7 @@ class MPC:
         #l4c_y_expr = None
 
         # Define weight parameters
-        Q = np.diag([10, 0.1])
+        Q = np.diag([100, 0.1])
         R = np.diag([1,1])
         ocp.cost.W = scipy.linalg.block_diag(Q,R)
         ocp.cost.W_e = Q 
@@ -505,7 +516,7 @@ class Controller:
         arr = df.to_numpy(dtype=np.float32)
         self.disturbance_values = arr
 
-        self.steady_state_solver, self.steady_state_args = model.optimization_problem_steady_state(t_horizon=self.t_horizon, T_env=T_env)
+        self.steady_state_solver, self.steady_state_args = model.optimization_problem_steady_state(dt=self.dt, T_env=T_env)
         
     def get_steady_state(self, T_bat_target):
         
@@ -550,11 +561,18 @@ class Controller:
         C_battery = 28*3600 # in coloumb
         hA_bat = 2500        
 
+        # Identified
         alpha_0 = 0.635039 # 0.637968 
         alpha_1 = 0.915692 # 1 
         alpha_2 = 0.919681 # 0.980682  
         alpha_3 = 1.47275 # 0.981036
-        gamma = 7.38325 # 7.59853
+        gamma = 7.38325 # 7.
+        # Arbitrary
+        #alpha_0 = 0.3 # 1.4 # arbitrary
+        #alpha_1 = 0.8 # 1 
+        #alpha_2 = 1 # 0.980682  
+        #alpha_3 = 2 # 0.981036
+        #gamma = 5 # 7.
                 
         mdot_c = density_coolant*pump_displacement*omega
         # Dynamics
@@ -581,7 +599,7 @@ class Controller:
 
         a = A
         b = B
-        q = 10
+        q = 100
         r = np.diag([1,1])
         cost_to_go = scipy.linalg.solve_continuous_are(a = a, b = b, q = q, r = r).item()
         Q_e = np.diag([cost_to_go, 1])
@@ -648,7 +666,10 @@ class Controller:
             self.xt_pred = ([T_bat_0, SOC_0])
             # Warm start
             omega_warm_start = (2000*2*np.pi/60)/self.omega_scale
-            Q_heat_warm_start = 2000/self.Q_heat_scale
+            if T_bat_0 <= 20.5:
+                Q_heat_warm_start = 2000/self.Q_heat_scale
+            else:
+                Q_heat_warm_start = -2000/self.Q_heat_scale
             input_warm_start = np.array([omega_warm_start, Q_heat_warm_start])
             self.solver.set(0, 'u', input_warm_start) # Weird but this is how acados does warm starts. Does not "force" inputs to be this
             state_warm_start = np.array([T_bat_0, SOC_0])

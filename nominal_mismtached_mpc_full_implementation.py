@@ -8,8 +8,8 @@ Q_h_2 = 10
 
 R = 0.1
 
-step_horizon = 0.1 # time between steps in seconds
-N = 10 # number of look ahead steps
+step_horizon = 0.5 # time between steps in seconds
+N = 50 # number of look ahead steps
 
 # Actual
 A1 = 1
@@ -21,27 +21,29 @@ k = 1000
 grav = 9.82
 
 # Model
-A1_model = 1
-a1_model = 0.1
-A2_model = 1
-a2_model = 0.1
-rho_model = 1000
-k_model = 1000
+nominal_ratio = 1
+A1_model = 1 * nominal_ratio
+a1_model = 0.1 #/ nominal_ratio
+A2_model = 1 * nominal_ratio
+a2_model = 0.1 #* nominal_ratio
+k_model = 1000#*nominal_ratio
+rho_model = 1000*nominal_ratio
+
 grav_model = 9.82
 
 sim_time = 200
 
 
-h_1_max = 2
-h_2_max = 2
+h_1_max = 100
+h_2_max = 100
 # params
 h_1_init = 0.05
 h_2_init = 0.05
-h_1_target = 1
-h_2_target = 1
+h_1_target = 79
+h_2_target = 79
 
 
-u_max = 1
+u_max = 5
 u_min = 0
 u_in_ss = a1*np.sqrt(2*grav*h_1_target)
 # Performs the shift after a control has been applied

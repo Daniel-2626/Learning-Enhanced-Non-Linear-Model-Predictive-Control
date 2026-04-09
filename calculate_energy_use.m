@@ -1,3 +1,6 @@
+%% Simulator set-up
+N_reps = 7;
+
 %% Get data
 logged_data_traditional = load("pred_error_nominal_steady_state_extended.mat");
 outputs_traditional = logged_data_traditional.data;
@@ -19,7 +22,7 @@ T_bat_mpc = getElement(outputs_mpc, "Pack3").Values.Data;
 
 %% Interpolation
 dt = 1;
-t = 1:dt:10*2474;
+t = 1:dt:N_reps*2474;
 pump_power_traditional_interp = interp1(time_traditional, pump_power_traditional, t);
 %heating_power_traditional_interp = interp1(time_traditional, heatingPwr_traditional, t);
 %heating_power_traditional_interp = interp1(time_traditional, heatingPwr_traditional, t,'previous', 'extrap');
@@ -27,7 +30,7 @@ pump_power_traditional_interp = interp1(time_traditional, pump_power_traditional
 T_bat_traditional_interp = interp1(time_traditional, T_bat_traditional, t);
 
 pump_power_mpc_interp = interp1(time_mpc, pump_power_mpc, t);
-time_mpc_heat_pwr = 0:5:10*2474;
+time_mpc_heat_pwr = 0:5:3*2474;
 %heating_power_mpc_interp = interp1(time_mpc, heatingPwr_mpc, t,'previous', 'extrap');
 %heating_power_mpc_interp(isnan(heating_power_mpc_interp))=0;
 T_bat_mpc_interp = interp1(time_mpc, T_bat_mpc, t);
@@ -49,10 +52,10 @@ plot(t,T_bat_traditional_interp, 'LineWidth',6)
 yline(20.5-1, 'LineWidth',6, 'LineStyle','--')
 yline(20.5, '-', 'Set-point', 'LineWidth',6, 'LabelHorizontalAlignment','left')
 yline(20.5+1, 'LineWidth',6, 'LineStyle','--')
-ytop = (20.5+1)*ones(1,10*2474);
-ybottom = (20.5-1)*ones(1,10*2474);
+ytop = (20.5+1)*ones(1,N_reps*2474);
+ybottom = (20.5-1)*ones(1,N_reps*2474);
 patch([t, flip(t)], [ybottom, ytop], [0.5, 0.5, 0.5], 'EdgeColor', 'none', 'FaceAlpha', 0.3)
-%axis([1000, 2474, 17, 23])
+axis([0, N_reps*2474, 20, 21])
 legend("NN+MPC", "MPC")
 xlabel("Time (s)")
 ylabel(['Temperature (C' char(176) ')'])

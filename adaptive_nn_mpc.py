@@ -49,13 +49,13 @@ class CascadedTankLearnedDynamics:
         h2 = cs.MX.sym('h2')
         X = cs.vertcat(h1, h2)
         u = cs.MX.sym('u')
-        leakage = cs.MX.sym('leakage')
+        #leakage = cs.MX.sym('leakage')
         nx = 2
         nu = 1
 
         # Dynamics
         
-        h1_dot =  k*u/(rho*A1) - a1/A1 * cs.sqrt(2*g*h1+0.00001) + leakage
+        h1_dot =  k*u/(rho*A1) - a1/A1 * cs.sqrt(2*g*h1+0.00001) #+ leakage
         h2_dot = a1/A1 * cs.sqrt(2*g*h1 + 0.00001) - a2/A2 * cs.sqrt(2*g*h2 + 0.00001) 
         X_dot_nominal = cs.vertcat(h1_dot, h2_dot)
 
@@ -72,7 +72,7 @@ class CascadedTankLearnedDynamics:
         model.xdot = cs.MX.sym('xdot', 2)
         model.u = u
         model.z = cs.vertcat([])
-        model.p = leakage # cs.vertcat([])
+        model.p = cs.vertcat([])  #leakage # cs.vertcat([])
         model.f_expl = f_expl
         model.f_nominal = X_dot_nominal
         model.x_start = x_start
@@ -131,7 +131,7 @@ class MPC:
         ocp.cost.Vz = np.array([[]]) # don't know what the V_z z, what the variable z should be
         ocp.cost.Vx_e = np.eye(nx)
 
-        ocp.parameter_values = 0
+        #ocp.parameter_values = 0
         l4c_y_expr = None
 
         # Define weight parameters
@@ -148,9 +148,9 @@ class MPC:
         ocp.constraints.x0 = model.x_start
 
         # Set constraints
-        u_max = 10
-        h1_max = 5
-        h2_max = 5 
+        u_max = 1
+        h1_max = 2
+        h2_max = 2 
         ocp.constraints.lbu = np.array([0])
         ocp.constraints.ubu = np.array([u_max])
         ocp.constraints.idxbu = np.array([0])
@@ -217,7 +217,7 @@ residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-3) # lr =
 residual_criterion = nn.MSELoss()
 
 # MPC Setup 
-N = 40
+N = 10
 t_horizon = 5
 learned_model = CascadedTankLearnedDynamics(l4c_residual)
 casadi_model = learned_model.model()
@@ -231,12 +231,12 @@ solver = MPC(model=learned_model.model(), N=N, t_horizon = t_horizon,
 # Simulation setup 
 dt = t_horizon/N
 Tsim = 200
-xt = np.array([1,1])
+xt = np.array([0.05,0.05])
 Steps = int(Tsim / dt)
 h1_history, u_history, h1_ref_history, h2_ref_history, h2_history, opt_times = [xt[0]], [], [], [], [xt[1]], []
 
-h1_ref = 2
-h2_ref = 2
+h1_ref = 1
+h2_ref = 1
 # Residual Finetune
 obs_buffer = []
 batch_size = 10
@@ -256,12 +256,12 @@ for i in range(Steps):
         # Set terminal reference
         y_ref_k = np.array([h1_ref, h2_ref, 0])
         solver.set(k, "yref", y_ref_k)
-        solver.set(k, "p", 0.1)
+        #solver.set(k, "p", 0.1)
 
     # Set terminal reference
     y_ref_terminal = np.array([h1_ref, h2_ref])
     solver.set(N, "yref", y_ref_terminal)
-    solver.set(N, "p", 0.1)
+    #solver.set(N, "p", 0.1)
 
     start = time.time()
     # Apply current state as constraint
@@ -284,6 +284,7 @@ for i in range(Steps):
     state_dynamics = DM2Arr(f(xt, ut))
     #print(state_dynamics)
     #stop
+    #randn_1 = random.random(1)
     obs_buffer.append((xt[0], xt[1], ut, state_dynamics[0][0], state_dynamics[1][0]))
     #print(obs_buffer)
     print(i)
@@ -346,16 +347,16 @@ plt.figure(figsize=(15, 10))
 
 # Plot x position
 plt.subplot(3, 1, 1)
-plt.plot(t_grid_states, h1_history[:], linewidth=2, color='C1', label='x')
-plt.plot(t_grid_inputs, h1_ref_history, '--', linewidth=2, label='x_ref', color='C0', alpha=0.7)
+plt.plot(t_grid_states, h1_history[:], linewidth=2, color='C1', label='h1')
+plt.plot(t_grid_inputs, h1_ref_history, '--', linewidth=2, label='h_1,ref', color='C0', alpha=0.7)
 plt.ylabel('Position [m]')
 plt.legend()
 plt.grid()
 
 # Plot theta angle
 plt.subplot(3, 1, 2)
-plt.plot(t_grid_states, h2_history[:], linewidth=2, color='C7', label='theta')
-plt.plot(t_grid_inputs, h2_ref_history, '--', linewidth=2, label='theta_ref', color='C0', alpha=0.7)
+plt.plot(t_grid_states, h2_history[:], linewidth=2, color='C7', label='h2')
+plt.plot(t_grid_inputs, h2_ref_history, '--', linewidth=2, label='h:2,ref', color='C0', alpha=0.7)
 plt.ylabel('Angle [rad]')
 plt.legend()
 plt.grid()

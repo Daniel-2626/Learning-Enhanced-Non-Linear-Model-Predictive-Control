@@ -1,4 +1,3 @@
-*.mat
 _l4c_generated/
 c_generated_code/
 __pycache__/

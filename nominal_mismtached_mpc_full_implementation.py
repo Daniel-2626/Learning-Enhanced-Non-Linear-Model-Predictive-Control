@@ -12,19 +12,19 @@ step_horizon = 0.1 # time between steps in seconds
 N = 10 # number of look ahead steps
 
 # Actual
-A1 = 0.1
-a1 = 0.01
-A2 = 0.1
-a2 = 0.01
+A1 = 1
+a1 = 0.1
+A2 = 1
+a2 = 0.1
 rho = 1000
 k = 1000
 grav = 9.82
 
 # Model
-A1_model = 0.1
-a1_model = 0.02
-A2_model = 0.1
-a2_model = 0.02
+A1_model = 1
+a1_model = 0.1
+A2_model = 1
+a2_model = 0.1
 rho_model = 1000
 k_model = 1000
 grav_model = 9.82
@@ -32,16 +32,16 @@ grav_model = 9.82
 sim_time = 200
 
 
-h_1_max = 1
-h_2_max = 1
+h_1_max = 2
+h_2_max = 2
 # params
 h_1_init = 0.05
 h_2_init = 0.05
-h_1_target = 0.3
-h_2_target = 0.3
+h_1_target = 1
+h_2_target = 1
 
 
-u_max = 0.1
+u_max = 1
 u_min = 0
 u_in_ss = a1*np.sqrt(2*grav*h_1_target)
 # Performs the shift after a control has been applied
@@ -279,10 +279,10 @@ ax1.set_ylabel("Height (m)")
 ax1.legend(["$h_1$", "$h_2$", "$h_{ref}$"])
 ax2.plot(u_in_num)
 ax2.axhline(u_in_ss, color= 'black')
-ax2.legend(["$u_{in}}$", "$u_{in,ss}$"])
+ax2.legend(["$u_{in}$", "$u_{in,ss}$"])
 ax2.set_title("Input")
 ax2.set_xlabel("Iteration")
 ax2.set_ylabel("Voltage (V)")
-fig.suptitle("Controller operating with mismatched model information", fontsize=16)
+fig.suptitle("Nominal controller operating with perfect model information", fontsize=16)
 
 plt.show()

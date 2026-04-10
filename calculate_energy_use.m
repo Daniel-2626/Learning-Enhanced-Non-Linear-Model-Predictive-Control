@@ -55,7 +55,7 @@ yline(20.5+1, 'LineWidth',6, 'LineStyle','--')
 ytop = (20.5+1)*ones(1,N_reps*2474);
 ybottom = (20.5-1)*ones(1,N_reps*2474);
 patch([t, flip(t)], [ybottom, ytop], [0.5, 0.5, 0.5], 'EdgeColor', 'none', 'FaceAlpha', 0.3)
-axis([0, N_reps*2474, 20, 21])
+axis([0, N_reps*2474, 20, 22])
 legend("NN+MPC", "MPC")
 xlabel("Time (s)")
 ylabel(['Temperature (C' char(176) ')'])

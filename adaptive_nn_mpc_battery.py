@@ -13,8 +13,11 @@ from datetime import datetime
 import ctypes
 import sys
 import csv
+import random as random
 
-np.random.seed(42)
+seed = sum([ord(char) for char in "DIAMONDS"])
+np.random.seed(seed)
+random.seed(seed)
 CELSIUS_TO_KELVIN = 273.15
 class MLP(nn.Module):
     def __init__(self, input_dim=2, output_dim=1, hidden_dim=128, num_layers=3):
@@ -99,6 +102,8 @@ class BatteryLearnedDynamics:
         T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(T_env - T_bat))
         SOC_dot_model = -current/C_battery
         X_dot_nominal = cs.vertcat(T_bat_dot_model, SOC_dot_model)
+        T_bat_dot_function = cs.Function("f_model", [T_bat, current, omega_normalized, Q_heat_normalized], 
+        [T_bat_dot_model], ["T_bat", "current", "omega_normalized", "Q_heat_normalized"], ["ode"])
 
         # MLP network
         #mlp_input = cs.vertcat(T_bat, current, U)
@@ -122,13 +127,13 @@ class BatteryLearnedDynamics:
         model.x_start = x_start
         model.constraints = cs.vertcat([]) # add constraints here or in mpc?
         model.name = "battery"
-
+        model.T_bat_dot_function = T_bat_dot_function
         
         return model, constraint 
     def optimization_problem_steady_state(self, dt, T_env):
         # Works in normalized 
-        Q = np.diag([100])
-        R = np.diag([1, 1])   
+        Q = np.diag([10])
+        R = np.diag([1, 10])   
         T = np.diag([1000000,1000000])
 
 
@@ -381,8 +386,8 @@ class MPC:
         l4c_y_expr = None
 
         # Define weight parameters
-        Q = np.diag([100, 0.1])
-        R = np.diag([1, 1])
+        Q = np.diag([10, 0.1])
+        R = np.diag([1, 10])
         ocp.cost.W = scipy.linalg.block_diag(Q,R)
         ocp.cost.W_e = Q 
         ocp.cost.yref = np.zeros((ny, ))
@@ -514,7 +519,8 @@ class Controller:
         learned_model = BatteryLearnedDynamics(l4c_residual)
       
         casadi_model, constraint = learned_model.model(T_env=T_env)
-        
+        self.T_bat_dot_function = casadi_model.T_bat_dot_function
+
         # MIGHT CAUSE ISSUES SINCE DIFFERENT THAN YU MEI, here model=casadi_model
         self.solver = MPC(model=casadi_model, constraint=constraint, N=self.N, t_horizon = self.t_horizon,
                     external_shared_lib_dir=l4c_residual.shared_lib_dir,
@@ -629,8 +635,8 @@ class Controller:
 
         a = A
         b = B
-        q = 100
-        r = np.diag([1,1])
+        q = 10
+        r = np.diag([1,10])
         cost_to_go = scipy.linalg.solve_continuous_are(a = a, b = b, q = q, r = r).item()
         Q_e = np.diag([cost_to_go, 1])
         return Q_e
@@ -694,40 +700,58 @@ class Controller:
         # Apply current state as constraint
         self.solver.set(0, "lbx", xt)
         self.solver.set(0, "ubx", xt)
-
+        s_Q_heat_norm = 0/self.Q_heat_scale
+        s_omega_norm = 0/self.omega_scale
+        # Constraint tightening
+        if (T_bat_0 < (18.5 + CELSIUS_TO_KELVIN)) or (T_bat_0 > (22.5 + CELSIUS_TO_KELVIN)):
+            s_Q_heat_norm = 200/self.Q_heat_scale
+            s_omega_norm = 20/self.omega_scale
+        elif ((18.5 + CELSIUS_TO_KELVIN) <= T_bat_0 < (19.5 + CELSIUS_TO_KELVIN)) or (22.5 + CELSIUS_TO_KELVIN >= T_bat_0 > (21.5 + CELSIUS_TO_KELVIN)):
+            s_Q_heat_norm = 20/self.Q_heat_scale
+            s_omega_norm = 2/self.omega_scale
+        # Comment out for excitation
+        s_Q_heat_norm = 0/self.Q_heat_scale
+        s_omega_norm = 0/self.omega_scale
+        s_norm = np.array([s_omega_norm, s_Q_heat_norm])
+        # Set constraints
+        omega_min, omega_max = (150*2*np.pi/60)/self.omega_scale, (4000*2*np.pi/60)/self.omega_scale
+            
+        Q_heat_min, Q_heat_max = -4000/self.Q_heat_scale, 4000/self.Q_heat_scale
+       
+        u_min_tightened = np.array([omega_min, Q_heat_min]) + s_norm
+        u_max_tightened = np.array([omega_max, Q_heat_max]) - s_norm
+        self.solver.constraints_set(0, 'lbu', u_min_tightened)
+        self.solver.constraints_set(0, 'ubu', u_max_tightened)
         # Solve mpc and apply control
         self.solver.solve()
         self.total_cost += self.solver.get_cost()
         # ut = solver.get(0, "u").item()
         ut = self.solver.get(0, "u")
+        print("SOLVER solution", ut)
         slack_lower = self.solver.get(0, "sl")
         slack_upper = self.solver.get(0, "su")
-        print("slack lower", slack_lower, "slack upper", slack_upper)
+        #print("slack lower", slack_lower, "slack upper", slack_upper)
         
         # Saturation
-        omega_max = (4000*2*np.pi/60)
-        omega_min = (150*2*np.pi/60)
-        Q_heat_max = 4000
-        Q_heat_min = -4000
-        omega_value = min(self.omega_scale * ut[0].item(), omega_max)
-        Q_heat_value = min(self.Q_heat_scale * ut[1].item(), Q_heat_max)
-        omega_value = max(omega_value, omega_min)
-        Q_heat_value = max(Q_heat_value, Q_heat_min)
-        
+        omega_value = min(ut[0].item(), omega_max - s_omega_norm)
+        Q_heat_value = min(ut[1].item(), Q_heat_max - s_Q_heat_norm)
+        omega_value = max(omega_value, omega_min + s_omega_norm)
+        Q_heat_value = max(Q_heat_value, Q_heat_min + s_Q_heat_norm)
+        omega_value = self.omega_scale * omega_value
+        Q_heat_value = self.Q_heat_scale * Q_heat_value
         print("inputs normalized", ut)
         status = self.solver.get_status()
         if status != 0:
             print("ERROR", status, "at iterate", self.current_iterate)
             self.total_errors += 1
-    
+        print("total errors", self.total_errors)
         # Want to compare prediction at time step 0 with value at time step 1
         # So delay update of xt pred
-        if self.current_iterate > 0:
-            pred_error = self.xt_pred[0] - T_bat_0
-        else:
-            pred_error = 0
-        pred = self.solver.get(1, 'x')
-
+       
+        pred_error = 0
+        pred_error_nn = 0
+        T_bat_pred = 0
+        T_bat_pred_nn = 0
         # Collect training data for NN
 
         
@@ -779,7 +803,24 @@ class Controller:
             self.obs_buffer.append((dT_bat_euler, T_bat_dot_model))
             self.data.append((self.T_bat_last, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale))
             #self.data.append((self.T_bat_last, current, Q_cool))
+            self.residual_mlp.eval()
+            residual_data = torch.tensor([T_bat_k_minus_1, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale], dtype=torch.float32)
+            residual = self.residual_mlp(residual_data).numpy().item()
 
+            K1 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)).item()
+            print(K1)
+            #K2 = self.T_bat_dot_function(T_bat_k_minus_1 + self.dt * K1, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)
+            #K3 = self.T_bat_dot_function(T_bat_k_minus_1 + self.dt * K2, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)
+            #K4 = self.T_bat_dot_function(T_bat_k_minus_1 +  K3, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)
+            
+            T_bat_pred = T_bat_k_minus_1 + self.dt*K1 # + 2*K2 + 2*K3 + K4)
+
+
+            T_bat_pred_nn =  T_bat_k_minus_1 + self.dt * (K1 + self.nn_on*residual)
+            print(type(T_bat_pred_nn))
+            self.residual_mlp.train()
+            pred_error_nn = T_bat_pred_nn - T_bat_k
+            pred_error = T_bat_pred - T_bat_k
         else:
             self.obs_buffer.append((0, 0))
             self.data = [(0,0,0,0)]
@@ -818,29 +859,31 @@ class Controller:
             
             self.l4c_residual.update(self.residual_mlp)
         
-
-
-       
-
- 
-        elapsed = 1000*(time.time() - start)
-        print("time", self.dt*self.current_iterate)
-        print("total errors", self.total_errors)
-    
-        self.current_iterate += 1
+        # Applying random noise for better excitation
+        s_omega = s_omega_norm*2*(random.random() - 0.5)
+        s_Q_heat = s_Q_heat_norm*2*(random.random() - 0.5)
+        print("random input noise", self.omega_scale * s_omega, self.Q_heat_scale * s_Q_heat)
+        omega_value = omega_value + self.omega_scale * s_omega
+        Q_heat_value = Q_heat_value + self.Q_heat_scale * s_Q_heat
         if (self.current_iterate * self.dt) < self.T_warm_start:
+            print("WARM STARTING")
             if T_bat_0 > T_bat_target: # Cooling regime
-                omega_value, Q_heat_value = 4000*2*np.pi/60, -4000
+                omega_value, Q_heat_value = self.omega_scale*omega_max, self.Q_heat_scale*Q_heat_min
             else: # Heating regime
-                omega_value, Q_heat_value = 4000*2*np.pi/60, 4000
+                omega_value, Q_heat_value = self.omega_scale*omega_max, self.Q_heat_scale*Q_heat_max
+    
 
-        self.xt_pred = np.array([pred[0].item(), pred[1].item()])
+        self.xt_pred = np.array([T_bat_pred_nn, 0])
         self.T_bat_last = T_bat_0 # Changed from xt[0], should be the same but for sanity
         self.omega_last = omega_value
         self.Q_heat_last = Q_heat_value
-        self.current_last = current_0
+        self.current_last = disturbances[int(self.dt*(self.current_iterate))].item()
         print(omega_value, Q_heat_value, self.xt_pred[0], T_bat_0, T_bat_target)
+        print("time", self.dt*self.current_iterate)
         print("cumulative cost", self.total_cost)
+        elapsed = 1000*(time.time() - start)
         print(elapsed, 'ms')
         print("--------------------------------")
-        return omega_value, Q_heat_value, self.xt_pred[0], pred_error
+        self.current_iterate += 1
+
+        return omega_value, Q_heat_value, T_bat_pred_nn, T_bat_pred, pred_error_nn, pred_error

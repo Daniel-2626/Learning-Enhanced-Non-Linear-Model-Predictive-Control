@@ -133,7 +133,7 @@ class BatteryLearnedDynamics:
     def optimization_problem_steady_state(self, dt, T_env):
         # Works in normalized 
         Q = np.diag([10])
-        R = np.diag([1, 10])   
+        R = np.diag([1, 20])   
         T = np.diag([1000000,1000000])
 
 
@@ -387,7 +387,7 @@ class MPC:
 
         # Define weight parameters
         Q = np.diag([10, 0.1])
-        R = np.diag([1, 10])
+        R = np.diag([1, 20])
         ocp.cost.W = scipy.linalg.block_diag(Q,R)
         ocp.cost.W_e = Q 
         ocp.cost.yref = np.zeros((ny, ))
@@ -514,7 +514,7 @@ class Controller:
         self.l4c_residual = l4c_residual
 
         # MPC Setup 
-        self.N = 80
+        self.N = 200 # 80
         self.t_horizon = self.N*5
         learned_model = BatteryLearnedDynamics(l4c_residual)
       
@@ -529,7 +529,7 @@ class Controller:
         # SOC_ref = None # This is not actually tracked
         self.dt = self.t_horizon/self.N
         self.obs_buffer = []
-        self.batch_size = 30 #30
+        self.batch_size = 80 #30
         self.T_update = self.batch_size*self.dt
         self.T_warm_start = 30
         self.current_iterate = 0
@@ -636,7 +636,7 @@ class Controller:
         a = A
         b = B
         q = 10
-        r = np.diag([1,10])
+        r = np.diag([1,20])
         cost_to_go = scipy.linalg.solve_continuous_are(a = a, b = b, q = q, r = r).item()
         Q_e = np.diag([cost_to_go, 1])
         return Q_e
@@ -744,7 +744,6 @@ class Controller:
         if status != 0:
             print("ERROR", status, "at iterate", self.current_iterate)
             self.total_errors += 1
-        print("total errors", self.total_errors)
         # Want to compare prediction at time step 0 with value at time step 1
         # So delay update of xt pred
        
@@ -808,7 +807,6 @@ class Controller:
             residual = self.residual_mlp(residual_data).numpy().item()
 
             K1 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)).item()
-            print(K1)
             #K2 = self.T_bat_dot_function(T_bat_k_minus_1 + self.dt * K1, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)
             #K3 = self.T_bat_dot_function(T_bat_k_minus_1 + self.dt * K2, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)
             #K4 = self.T_bat_dot_function(T_bat_k_minus_1 +  K3, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)
@@ -817,7 +815,6 @@ class Controller:
 
 
             T_bat_pred_nn =  T_bat_k_minus_1 + self.dt * (K1 + self.nn_on*residual)
-            print(type(T_bat_pred_nn))
             self.residual_mlp.train()
             pred_error_nn = T_bat_pred_nn - T_bat_k
             pred_error = T_bat_pred - T_bat_k
@@ -850,7 +847,7 @@ class Controller:
                 prediction = self.residual_mlp(X_batch) # gives data to network to make a prediction
                 loss = self.residual_criterion(prediction, y_target)
                 l2_norm = sum(p.pow(2).sum() for p in self.residual_mlp.parameters())
-                regularization = 1
+                regularization = 0.1
                 loss += regularization * l2_norm
                 loss.backward() # calculates gradient
                 self.residual_optimizer.step() # one optimization step to update parameters
@@ -881,6 +878,8 @@ class Controller:
         print(omega_value, Q_heat_value, self.xt_pred[0], T_bat_0, T_bat_target)
         print("time", self.dt*self.current_iterate)
         print("cumulative cost", self.total_cost)
+        print("total errors", self.total_errors)
+
         elapsed = 1000*(time.time() - start)
         print(elapsed, 'ms')
         print("--------------------------------")

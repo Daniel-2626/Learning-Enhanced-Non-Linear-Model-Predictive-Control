@@ -21,7 +21,7 @@ k = 1000
 grav = 9.82
 
 # Model
-nominal_ratio = 1
+nominal_ratio = 0.7
 A1_model = 1 * nominal_ratio
 a1_model = 0.1 #/ nominal_ratio
 A2_model = 1 * nominal_ratio
@@ -31,19 +31,19 @@ rho_model = 1000*nominal_ratio
 
 grav_model = 9.82
 
-sim_time = 200
+sim_time = 35
 
 
-h_1_max = 100
-h_2_max = 100
+h_1_max = 2
+h_2_max = 2
 # params
 h_1_init = 0.05
 h_2_init = 0.05
-h_1_target = 79
-h_2_target = 79
+h_1_target = 1
+h_2_target = 1
 
 
-u_max = 5
+u_max = 0.8
 u_min = 0
 u_in_ss = a1*np.sqrt(2*grav*h_1_target)
 # Performs the shift after a control has been applied
@@ -285,6 +285,6 @@ ax2.legend(["$u_{in}$", "$u_{in,ss}$"])
 ax2.set_title("Input")
 ax2.set_xlabel("Iteration")
 ax2.set_ylabel("Voltage (V)")
-fig.suptitle("Nominal controller operating with perfect model information", fontsize=16)
+fig.suptitle("Nominal controller operating with mismatched (70%) model information", fontsize=16)
 
 plt.show()

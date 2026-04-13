@@ -1,8 +1,8 @@
 %% Simulator set-up
-N_reps = 7;
+N_reps = 10;
 
 %% Get data
-logged_data_traditional = load("pred_error_nominal_steady_state_extended.mat");
+logged_data_traditional = load("Simulation_Data/nominal_mpc_for_benchmark_t_env_14_mismatched_model_N_200.mat");
 outputs_traditional = logged_data_traditional.data;
 
 time_traditional = getElement(outputs_traditional, "time").Values.Data;
@@ -11,7 +11,7 @@ heatingPwr_traditional = abs(getElement(outputs_traditional, "heatingPwr").Value
 T_bat_traditional = getElement(outputs_traditional, "Pack3").Values.Data;
 
 %% Get data
-logged_data_mpc = load("pred_error_nn_steady_state_extended.mat");
+logged_data_mpc = load("Simulation_Data/adaptive_mpc_for_benchmark_t_env_14_mismatched_model_N_200.mat");
 outputs_mpc = logged_data_mpc.data;
 
 time_mpc = getElement(outputs_mpc, "time").Values.Data;
@@ -30,7 +30,7 @@ pump_power_traditional_interp = interp1(time_traditional, pump_power_traditional
 T_bat_traditional_interp = interp1(time_traditional, T_bat_traditional, t);
 
 pump_power_mpc_interp = interp1(time_mpc, pump_power_mpc, t);
-time_mpc_heat_pwr = 0:5:3*2474;
+time_mpc_heat_pwr = 0:5:N_reps*2474;
 %heating_power_mpc_interp = interp1(time_mpc, heatingPwr_mpc, t,'previous', 'extrap');
 %heating_power_mpc_interp(isnan(heating_power_mpc_interp))=0;
 T_bat_mpc_interp = interp1(time_mpc, T_bat_mpc, t);
@@ -38,7 +38,7 @@ T_bat_mpc_interp = interp1(time_mpc, T_bat_mpc, t);
 
 %% Riemman sum
 hour_in_sec = 1/3600;
-heating_energy_traditional = 5*hour_in_sec*sum(heatingPwr_traditional)/1000; % Heating power in Watts, convert to kW
+heating_energy_traditional = 1*hour_in_sec*sum(heating_power_traditional_interp)/1000; % Heating power in Watts, convert to kW
 pump_energy_traditional = hour_in_sec*sum(pump_power_traditional_interp);
 energy_traditional = heating_energy_traditional + pump_energy_traditional;
 heating_energy_mpc = 5*hour_in_sec*sum(heatingPwr_mpc)/1000; % heating power set every 5 s
@@ -55,12 +55,13 @@ yline(20.5+1, 'LineWidth',6, 'LineStyle','--')
 ytop = (20.5+1)*ones(1,N_reps*2474);
 ybottom = (20.5-1)*ones(1,N_reps*2474);
 patch([t, flip(t)], [ybottom, ytop], [0.5, 0.5, 0.5], 'EdgeColor', 'none', 'FaceAlpha', 0.3)
-axis([0, N_reps*2474, 20, 22])
+axis([0, N_reps*2474, 14, 27])
 legend("NN+MPC", "MPC")
 xlabel("Time (s)")
 ylabel(['Temperature (C' char(176) ')'])
 
 %%
-%plot(heatingPwr_mpc)
-%hold on
-%plot(heatingPwr_traditional)
+plot(heatingPwr_mpc, LineWidth=2)
+hold on
+plot(heatingPwr_traditional, LineWidth=2)
+legend("NN+MPC", "MPC")

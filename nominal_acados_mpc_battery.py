@@ -116,7 +116,7 @@ class BatteryDynamics:
     def optimization_problem_steady_state(self, dt, T_env):
         # Works in normalized 
         Q = np.diag([10])
-        R = np.diag([1, 10])   
+        R = np.diag([1,20])   
         
         #R = np.diag([1, 155000])   
         T = np.diag([1000000,1000000])
@@ -373,7 +373,7 @@ class MPC:
 
         # Define weight parameters
         Q = np.diag([10, 0.1])
-        R = np.diag([1,10])
+        R = np.diag([1,20])
         #R = np.diag([1,155000])
         
         ocp.cost.W = scipy.linalg.block_diag(Q,R)
@@ -488,7 +488,7 @@ class Controller:
     def setup(self, T_bat_target, T_env):
 
         # MPC Setup 
-        self.N =80 # 80
+        self.N =200 # 80
         self.t_horizon = self.N * 5
         model = BatteryDynamics()
       
@@ -608,7 +608,7 @@ class Controller:
         a = A
         b = B
         q = 10
-        r = np.diag([1,10])
+        r = np.diag([1,20])
         
         #r = np.diag([1,155000])
         cost_to_go = scipy.linalg.solve_continuous_are(a = a, b = b, q = q, r = r).item()

@@ -1,10 +1,11 @@
 %% 
 %rmdir("_l4c_generated/",'s')
-rmdir("c_generated_code/", 's') % Remember to uncomment when debugging
+%rmdir("c_generated_code/", 's') % Remember to uncomment when debugging
 open("Adaptive_Cool_and_Heat_EVBatteryCoolingSystem.slx")
-T_env = 27;
+%open("Traditional_EVBatteryCoolingSystem.slx")
+T_env = 14;
 T_init = T_env + 273.15;
-tF = 4*2474;
+tF = 7*2474;
 t_sim = tF;
 adaptive  = py.importlib.import_module('adaptive_nn_mpc_battery');
 nominal = py.importlib.import_module('nominal_acados_mpc_battery');

@@ -116,7 +116,7 @@ class BatteryDynamics:
     def optimization_problem_steady_state(self, dt, T_env):
         # Works in normalized 
         Q = np.diag([10])
-        R = np.diag([1,20])   
+        R = np.diag([1,1])   
         
         #R = np.diag([1, 155000])   
         T = np.diag([1000000,1000000])
@@ -232,7 +232,7 @@ class BatteryDynamics:
         K3 = f_model(st + step_horizon/2 * K2, U, disturbances)
         K4 = f_model(st + step_horizon * K3, U, disturbances)
 
-        st_next_RK4 = st + (step_horizon) * (K1+ 2*K2 + 2*K3 + K4)
+        st_next_RK4 = st + (step_horizon) * (K1 + 2*K2 + 2*K3 + K4)
 
         g = cs.vertcat(g,T_clin_eval, T_clout_eval, st_next - st_next_RK4 + slack_RK4) # Basically saying X[:, k+1] = runge kutta evaluation
 
@@ -253,7 +253,8 @@ class BatteryDynamics:
             'max_iter': 2000,
             'print_level': 0,
             'acceptable_tol': 1e-8,
-            'acceptable_obj_change_tol': 1e-6
+            'acceptable_obj_change_tol': 1e-6,
+            'hessian_approximation': 'limited-memory'
         },
             'print_time': 0
         }
@@ -373,7 +374,7 @@ class MPC:
 
         # Define weight parameters
         Q = np.diag([10, 0.1])
-        R = np.diag([1,20])
+        R = np.diag([1,1])
         #R = np.diag([1,155000])
         
         ocp.cost.W = scipy.linalg.block_diag(Q,R)
@@ -488,7 +489,7 @@ class Controller:
     def setup(self, T_bat_target, T_env):
 
         # MPC Setup 
-        self.N =200 # 80
+        self.N =200 #200 # 80
         self.t_horizon = self.N * 5
         model = BatteryDynamics()
       
@@ -531,7 +532,7 @@ class Controller:
         args = self.steady_state_args
         
         disturbances = self.disturbance_values
-        current_0 = disturbances[int(self.dt*(self.current_iterate ))].item()
+        current_0 = disturbances[int(self.dt*(self.current_iterate + self.N))].item()
         args['p'] = cs.vertcat(
             current_0,
         )
@@ -608,12 +609,12 @@ class Controller:
         a = A
         b = B
         q = 10
-        r = np.diag([1,20])
+        r = np.diag([1,1])
         
         #r = np.diag([1,155000])
         cost_to_go = scipy.linalg.solve_continuous_are(a = a, b = b, q = q, r = r).item()
         Q_e = np.diag([cost_to_go, 1])
-        return Q_e
+        return Q_e, cost_to_go
     def collect_data(self, T_bat_0, dT_bat):
         # input and disturbance values (not symbolics because know what happened)
         # Not sure if should take current values or last, but figure that at this moment the change is happening because of the last values
@@ -689,7 +690,7 @@ class Controller:
         # Set reference for each step in MPC horizon
         #print(disturbances[0], current_0)
         omega_norm_ss, Q_heat_norm_ss = self.get_steady_state(T_bat_target=T_bat_target)
-        Q_e = self.get_cost_to_go(T_bat_target, T_env, omega_norm_ss, Q_heat_norm_ss)
+        Q_e, cost_to_go = self.get_cost_to_go(T_bat_target, T_env, omega_norm_ss, Q_heat_norm_ss)
         print("omega_ss", omega_norm_ss, "Q_heat_ss", Q_heat_norm_ss)
         print("Q_e", Q_e)
         for k in range(self.N):
@@ -860,4 +861,4 @@ class Controller:
         print("--------------------------------")
         self.current_iterate += 1
 
-        return omega_value, Q_heat_value, T_bat_pred_nn, T_bat_pred, pred_error_nn, pred_error
+        return omega_value, Q_heat_value, T_bat_pred_nn, T_bat_pred, pred_error_nn, pred_error, self.omega_scale*omega_norm_ss, self.Q_heat_scale*Q_heat_norm_ss, cost_to_go, elapsed

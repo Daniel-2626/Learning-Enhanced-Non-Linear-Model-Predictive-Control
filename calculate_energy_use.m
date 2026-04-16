@@ -1,8 +1,8 @@
 %% Simulator set-up
-N_reps = 10;
+N_reps = 4;
 
 %% Get data
-logged_data_traditional = load("Simulation_Data/nominal_mpc_for_benchmark_t_env_14_mismatched_model_N_200.mat");
+logged_data_traditional = load("Simulation_Data/adaptive_mpc_for_benchmark_t_env_17_steady_state_check.mat");
 outputs_traditional = logged_data_traditional.data;
 
 time_traditional = getElement(outputs_traditional, "time").Values.Data;
@@ -11,7 +11,7 @@ heatingPwr_traditional = abs(getElement(outputs_traditional, "heatingPwr").Value
 T_bat_traditional = getElement(outputs_traditional, "Pack3").Values.Data;
 
 %% Get data
-logged_data_mpc = load("Simulation_Data/adaptive_mpc_for_benchmark_t_env_14_mismatched_model_N_200.mat");
+logged_data_mpc = load("Simulation_Data/adaptive_mpc_for_benchmark_t_env_17_steady_state_check_residual_update.mat");
 outputs_mpc = logged_data_mpc.data;
 
 time_mpc = getElement(outputs_mpc, "time").Values.Data;
@@ -38,7 +38,7 @@ T_bat_mpc_interp = interp1(time_mpc, T_bat_mpc, t);
 
 %% Riemman sum
 hour_in_sec = 1/3600;
-heating_energy_traditional = 1*hour_in_sec*sum(heating_power_traditional_interp)/1000; % Heating power in Watts, convert to kW
+heating_energy_traditional = 1*hour_in_sec*sum(heatingPwr_traditional)/1000; % Heating power in Watts, convert to kW
 pump_energy_traditional = hour_in_sec*sum(pump_power_traditional_interp);
 energy_traditional = heating_energy_traditional + pump_energy_traditional;
 heating_energy_mpc = 5*hour_in_sec*sum(heatingPwr_mpc)/1000; % heating power set every 5 s

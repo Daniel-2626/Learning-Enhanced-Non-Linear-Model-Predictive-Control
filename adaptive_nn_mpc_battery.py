@@ -537,7 +537,7 @@ class Controller:
         # SOC_ref = None # This is not actually tracked
         self.dt = self.t_horizon/self.N
         self.obs_buffer = []
-        self.batch_size = 90 #30
+        self.batch_size = 80 #30
         self.T_update = self.batch_size*self.dt
         self.T_warm_start = 30
         self.current_iterate = 0
@@ -879,6 +879,7 @@ class Controller:
                 # regularization = 0.1
                 # loss += regularization * l2_norm
                 loss.backward() # calculates gradient
+                
                 self.residual_optimizer.step() # one optimization step to update parameters
             for p in self.residual_mlp.parameters(): p.requires_grad = False
             #print("UPDATE MODEL AT", self.dt*self.current_iterate)

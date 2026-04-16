@@ -13,7 +13,7 @@ lms = py.importlib.import_module('lms_acados_mpc_battery');
 
 %%
 clear adaptive, clear nominal, clear lms
-%rmdir("_l4c_generated/", 's')
+rmdir("_l4c_generated/", 's')
 rmdir("c_generated_code/", 's')
 adaptive  = py.importlib.import_module('adaptive_nn_mpc_battery');
 nominal = py.importlib.import_module('nominal_acados_mpc_battery');

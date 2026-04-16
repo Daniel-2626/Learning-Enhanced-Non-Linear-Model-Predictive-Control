@@ -507,7 +507,7 @@ class Controller:
             param.requires_grad = False
         residual_mlp.load_state_dict(torch.load("heating_pretrain.pth", weights_only=True))
         self.residual_mlp = residual_mlp
-        self.residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-3) # lr = learning rate, the optimizer
+        self.residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=5e-4, weight_decay=0.1) # lr = learning rate, the optimizer
         self.residual_criterion = nn.MSELoss()
 
         l4c_residual = l4c.L4CasADi(self.residual_mlp, name="battery", mutable=True)
@@ -846,9 +846,9 @@ class Controller:
                 self.residual_optimizer.zero_grad() # optimizer object
                 prediction = self.residual_mlp(X_batch) # gives data to network to make a prediction
                 loss = self.residual_criterion(prediction, y_target)
-                l2_norm = sum(p.pow(2).sum() for p in self.residual_mlp.parameters())
-                regularization = 0.1
-                loss += regularization * l2_norm
+                # l2_norm = sum(p.pow(2).sum() for p in self.residual_mlp.parameters())
+                # regularization = 0.1
+                # loss += regularization * l2_norm
                 loss.backward() # calculates gradient
                 self.residual_optimizer.step() # one optimization step to update parameters
             for p in self.residual_mlp.parameters(): p.requires_grad = False

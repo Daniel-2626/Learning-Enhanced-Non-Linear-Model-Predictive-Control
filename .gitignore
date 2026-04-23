@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 _l4c_generated/
 c_generated_code/
 __pycache__/
@@ -5,3 +6,7 @@ slprj/
 *.csv
 *.asv
 *.mexa64
+=======
+Results/
+Results/
+>>>>>>> 2b1efc74f150dc3ec77a94f4e0678943bde0d023

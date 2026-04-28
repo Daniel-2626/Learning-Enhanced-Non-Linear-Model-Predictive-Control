@@ -363,7 +363,7 @@ class MPC:
         model_ac = self.acados_model(model=model, constraint=constraint)
         model_ac.con_h_expr = constraint.expr
         model_ac.con_h_expr_0 = constraint.expr
-        #model_ac.con_h_expr_e = constraint.expr
+
         # Dimensions
         #nx = 2
         nx = 1
@@ -439,6 +439,8 @@ class MPC:
         omega_max = (4000*2*np.pi/60)/model.omega_scale
         
         omega_min = (150*2*np.pi/60)/model.omega_scale
+        #omega_min = (2000*2*np.pi/60)/model.omega_scale
+        
         print("omega max", omega_max)
     
         Q_heat_max = 4000/model.Q_heat_scale
@@ -465,20 +467,19 @@ class MPC:
                 constraint.T_clout_max
             ]
         )
-        # We do not have nonlinear constraint on terminal in the acados formulation. 
-        # Because "con_h_expr_e can not depend on u or z." This makes sense for in the terminal node we do not determine u
-        #ocp.constraints.lh_e = np.array(
-        #[
-        #    constraint.T_clin_min,
-        #    constraint.T_clout_min
-        #]
-        #)
-        #ocp.constraints.uh_e = np.array(
-        #    [
-        #        constraint.T_clin_max,
-        #        constraint.T_clout_max
-        #    ]
-        #)
+
+        ocp.constraints.lh = np.array(
+        [
+            constraint.T_clin_min,
+            constraint.T_clout_min
+        ]
+        )
+        ocp.constraints.uh = np.array(
+            [
+                constraint.T_clin_max,
+                constraint.T_clout_max
+            ]
+        )
 
         ocp.constraints.lh_0 = np.array(
         [
@@ -492,6 +493,10 @@ class MPC:
                 constraint.T_clout_max
             ]
         )
+
+        # Note: We do not have terminal nonlinear constraint
+        # This is because the nonlinear constraint includes inputs
+        # For terminal node we do not have inputs so we cannot use it 
 
         # Add terminal constraints
         T_steady_low = 19 + CELSIUS_TO_KELVIN
@@ -511,48 +516,45 @@ class MPC:
         ocp.constraints.ubx_e = np.array([T_steady_high])
         
 
- 
+        # Define slack for terminal states
+        ocp.cost.zl_e = 100000 * np.zeros((ns_e,))
+        ocp.cost.zu_e = 100000 * np.zeros((ns_e,))
+        ocp.cost.Zl_e = 10000000 * np.ones((ns_e,))
+        ocp.cost.Zu_e = 10000000 * np.ones((ns_e,))
 
         # Add slack to states
         slack_allowable_low = Tb_min - T_steady_low  # How far below steady-state is allowed 
         slack_allowable_high = Tb_max - T_steady_high  # How far above steady-state is allowed 
         
-        ocp.constraints.lsbx = np.array([slack_allowable_low])   # Slack lower bound
-        ocp.constraints.usbx = np.array([slack_allowable_high])  # Slack upper bound
+        #ocp.constraints.lsbx = np.array([slack_allowable_low])   # Slack lower bound
+        #ocp.constraints.usbx = np.array([slack_allowable_high])  # Slack upper bound
 
         # Add slack to terminal constraints
-        ocp.constraints.lbsx_e = np.array([slack_allowable_low]) 
-        ocp.constraints.ubsx_e = np.array([slack_allowable_high])
+        #ocp.constraints.lbsx_e = np.array([slack_allowable_low]) 
+        #ocp.constraints.ubsx_e = np.array([slack_allowable_high])
         
-        # Slack constraint indices for state
+
+        
+        # Slack constraint indices
         ocp.constraints.idxsbx = np.array(range(nsx)) # Slack on state for nodes 1 --- (N - 1)
         ocp.constraints.idxsbx_e = np.array(range(nsx)) # Slack on terminal shooting for state
         # Note, no "idxbx_0" so have not slack on initial state. But makes sense since we give solver what x0 must be
-        # Slack constraint for nonlinear constraint
         ocp.constraints.idxsh_0 = np.array(range(nsh)) # Slack on initial shooting for nonlinear constraint
         ocp.constraints.idxsh = np.array(range(nsh)) # Slack on nonlinear constraint
-        #ocp.constraints.idxsh_e = np.array(range(nsh)) # Slack on terminal shooting for nonlinear constraint
 
-        # Slack constraint for input
-        ocp.constraints.idxsbu = np.array(range(nsu)) # Slack on u from 0 to N - 1 (automatically)
+        ocp.constraints.idxsbu = np.array(range(nsu)) # Slack on u
 
+        
         # Slack cost
         ocp.cost.zl = 100000 * np.zeros((ns,))
         ocp.cost.zu = 100000 * np.zeros((ns,))
         ocp.cost.Zl = 10000000 * np.ones((ns,))
         ocp.cost.Zu = 10000000 * np.ones((ns,))
 
-        # Initial
         ocp.cost.zl_0 = 100000 * np.zeros((nsh+nsu,))
         ocp.cost.zu_0 = 100000 * np.zeros((nsh+nsu,))
         ocp.cost.Zl_0 = 100000 * np.ones((nsh+nsu,))
         ocp.cost.Zu_0 = 100000 * np.ones((nsh+nsu,))
-
-        # Define slack for terminal states
-        ocp.cost.zl_e = 100000 * np.zeros((nsx,))
-        ocp.cost.zu_e = 100000 * np.zeros((nsx,))
-        ocp.cost.Zl_e = 10000000 * np.ones((nsx ,))
-        ocp.cost.Zu_e = 10000000 * np.ones((nsx,))
 
         # Solver options
         ocp.solver_options.qp_solver = "FULL_CONDENSING_HPIPM"

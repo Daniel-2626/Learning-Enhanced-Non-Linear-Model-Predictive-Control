@@ -363,7 +363,7 @@ class MPC:
         model_ac = self.acados_model(model=model, constraint=constraint)
         model_ac.con_h_expr = constraint.expr
         model_ac.con_h_expr_0 = constraint.expr
-        
+        #model_ac.con_h_expr_e = constraint.expr
         # Dimensions
         #nx = 2
         nx = 1
@@ -531,7 +531,8 @@ class MPC:
         # Slack constraint for nonlinear constraint
         ocp.constraints.idxsh_0 = np.array(range(nsh)) # Slack on initial shooting for nonlinear constraint
         ocp.constraints.idxsh = np.array(range(nsh)) # Slack on nonlinear constraint
-        
+        #ocp.constraints.idxsh_e = np.array(range(nsh)) # Slack on terminal shooting for nonlinear constraint
+
         # Slack constraint for input
         ocp.constraints.idxsbu = np.array(range(nsu)) # Slack on u from 0 to N - 1 (automatically)
 
@@ -603,9 +604,7 @@ class Controller:
         self.T_update = 60 
         self.T_warm_start = 30
         self.current_iterate = 0
-        #self.xt_pred = np.array([CELSIUS_TO_KELVIN, 1])
-        
-        self.xt_pred = np.array([CELSIUS_TO_KELVIN])
+        self.xt_pred = np.array([CELSIUS_TO_KELVIN, 1])
         self.x_last = np.array([0,0])
         self.omega_last = 0
         self.Q_heat_last = 0
@@ -860,12 +859,10 @@ class Controller:
         self.solver.solve()
         self.total_cost += self.solver.get_cost()
         # ut = solver.get(0, "u").item()
-        shooting_node = 0
         ut = self.solver.get(0, "u")
-        slack_lower = self.solver.get(shooting_node, "sl")
-        slack_upper = self.solver.get(shooting_node, "su")
+        slack_lower = self.solver.get(1, "sl")
+        slack_upper = self.solver.get(1, "su")
         slx = slack_upper[2]
-        print("slack on shooting node {}".format(shooting_node))
         print("slack lower", slack_lower, "slack upper", slack_upper)
         
         # Saturation

@@ -36,7 +36,7 @@ class BatteryDynamics:
         Q_heat_normalized = cs.MX.sym('Q_heat_norm')
         Q_heat = model.Q_heat_scale * Q_heat_normalized #cs.MX.sym('Q_heat') # Pump control (rpm that is converted to kg/s)
         current = cs.MX.sym('current')
-
+        
         P = cs.vertcat(current)
         
         #nn_on = cs.MX.sym('nn_on') # Flip switch for whether on not to have the NN in the model (helps when NN not trained yet)
@@ -81,9 +81,9 @@ class BatteryDynamics:
         T_clout = ((T_clin - T_bat) * alpha_2*np.exp(-NTU_bat) + T_bat)
         
         constraint = cs.types.SimpleNamespace()
-        constraint.T_clin_min = -20 + CELSIUS_TO_KELVIN 
+        constraint.T_clin_min = -40 + CELSIUS_TO_KELVIN 
         constraint.T_clin_max = 100 + CELSIUS_TO_KELVIN
-        constraint.T_clout_min = -20 + CELSIUS_TO_KELVIN
+        constraint.T_clout_min = -40 + CELSIUS_TO_KELVIN
         constraint.T_clout_max = 100 + CELSIUS_TO_KELVIN
         constraint.expr = cs.vertcat(T_clin, T_clout)
 
@@ -101,10 +101,17 @@ class BatteryDynamics:
         x_start = np.array([T_env]) # initial constraint (gets overwritten)
 
         # Power function (for cost)
-        Power =  (295.1748  * mdot_c**2 - 187.6638 * mdot_c + 18.1336)/(model.omega_scale**2) + (Q_heat**2)/(model.Q_heat_scale**2) 
-        model.cost_y_expr_0 = cs.vertcat(Power)
-        model.cost_y_expr = cs.vertcat(Power)
-        model.cost_y_expr_e = cs.vertcat(0.0)
+        constant = 50 #18.1336
+        #Power =  (295.1748  * mdot_c**2 - 187.6638 * mdot_c + constant)/(model.omega_scale) + (Q_heat)/(model.Q_heat_scale) 
+        #Pump_power = (295.1748  * mdot_c**2  - 187.6638 * mdot_c+ constant)/(450)
+        #Pump_power = (295.1748  * mdot_c**2)/530
+        Pump_power = omega/model.omega_scale
+        Heating_power = Q_heat/model.Q_heat_scale 
+        #Power =  (295.1748  * mdot_c**2 - 187.6638 * mdot_c + constant)/(450) + (Q_heat)/(model.Q_heat_scale) 
+
+        model.cost_y_expr_0 = cs.vertcat(Pump_power, Heating_power, T_env)
+        model.cost_y_expr = cs.vertcat(Pump_power, Heating_power, T_env)
+        model.cost_y_expr_e = cs.vertcat(T_env)
         # store to struct
         
         model.x = X 
@@ -376,7 +383,7 @@ class MPC:
         nsu = nu
         nsx = 1
         ns = nsu + nsx + nsh
-        ny = 1
+        ny = 3
         ny_e = 1
         nsbx_e = 1
         ns_e = nsbx_e
@@ -420,13 +427,13 @@ class MPC:
         # Define weight parameters
         # Q = np.diag([10, 0.1])
         # R = np.diag([1,1])
-        Q = np.array([[1.0]])
-        
+        Q = np.array([1.0, 1.0, 0.1])
+        Q = np.diag(Q)
         # ocp.cost.W = scipy.linalg.block_diag(Q,R)
         # ocp.cost.W_e = Q 
         ocp.cost.W_0 = Q
         ocp.cost.W = Q
-        ocp.cost.W_e = Q
+        ocp.cost.W_e = np.diag(np.array([0.1]))
 
         ocp.cost.yref_0 = np.zeros((ny, ))
         ocp.cost.yref = np.zeros((ny, ))
@@ -454,19 +461,7 @@ class MPC:
         # ocp.constraints.ubx = np.array([Tb_max])
         # ocp.constraints.lbx = np.array([Tb_min])
         
-        # Nonlinear constraints (for coolan)
-        ocp.constraints.lh = np.array(
-        [
-            model.T_env,
-            model.T_env
-        ]
-        )
-        ocp.constraints.uh = np.array(
-            [
-                constraint.T_clin_max,
-                constraint.T_clout_max
-            ]
-        )
+        # Nonlinear constraints (for coolant)
 
         ocp.constraints.lh = np.array(
         [
@@ -517,10 +512,10 @@ class MPC:
         
 
         # Define slack for terminal states
-        ocp.cost.zl_e = 100000 * np.zeros((ns_e,))
-        ocp.cost.zu_e = 100000 * np.zeros((ns_e,))
-        ocp.cost.Zl_e = 10000000 * np.ones((ns_e,))
-        ocp.cost.Zu_e = 10000000 * np.ones((ns_e,))
+        ocp.cost.zl_e = 1 * np.zeros((ns_e,))
+        ocp.cost.zu_e = 1 * np.zeros((ns_e,))
+        ocp.cost.Zl_e = 1 * np.ones((ns_e,))
+        ocp.cost.Zu_e = 1 * np.ones((ns_e,))
 
         # Add slack to states
         slack_allowable_low = Tb_min - T_steady_low  # How far below steady-state is allowed 
@@ -546,15 +541,15 @@ class MPC:
 
         
         # Slack cost
-        ocp.cost.zl = 100000 * np.zeros((ns,))
-        ocp.cost.zu = 100000 * np.zeros((ns,))
-        ocp.cost.Zl = 10000000 * np.ones((ns,))
-        ocp.cost.Zu = 10000000 * np.ones((ns,))
+        ocp.cost.zl = 1 * np.zeros((ns,))
+        ocp.cost.zu = 1 * np.zeros((ns,))
+        ocp.cost.Zl = 1 * np.ones((ns,))
+        ocp.cost.Zu = 1 * np.ones((ns,))
 
-        ocp.cost.zl_0 = 100000 * np.zeros((nsh+nsu,))
-        ocp.cost.zu_0 = 100000 * np.zeros((nsh+nsu,))
-        ocp.cost.Zl_0 = 100000 * np.ones((nsh+nsu,))
-        ocp.cost.Zu_0 = 100000 * np.ones((nsh+nsu,))
+        ocp.cost.zl_0 = 1 * np.zeros((nsh+nsu,))
+        ocp.cost.zu_0 = 1 * np.zeros((nsh+nsu,))
+        ocp.cost.Zl_0 = 1 * np.ones((nsh+nsu,))
+        ocp.cost.Zu_0 = 1 * np.ones((nsh+nsu,))
 
         # Solver options
         ocp.solver_options.qp_solver = "FULL_CONDENSING_HPIPM"
@@ -562,6 +557,7 @@ class MPC:
         ocp.solver_options.integrator_type = "ERK"
         ocp.solver_options.nlp_solver_type = "SQP_RTI"
         ocp.solver_options.sim_method_num_stages = 1
+        ocp.solver_options.regularize_method = 'GERSHGORIN_LEVENBERG_MARQUARDT' # Didn't immediately help
         
         # Will be overwritten
         ocp.parameter_values = 0
@@ -590,7 +586,7 @@ class Controller:
     def setup(self, T_bat_target, T_env):
 
         # MPC Setup 
-        self.N =200 #200 # 80
+        self.N = 200 #200 # 80
         self.t_horizon = self.N * 5
         model = BatteryDynamics()
       
@@ -829,7 +825,7 @@ class Controller:
         for k in range(self.N):
             # For stage cost: [T_bat_target, Power_target]
             # Power_target = 0 to minimize power consumption
-            y_ref_k = np.array([0])  
+            y_ref_k = np.array([0,0, T_bat_target])  
             self.solver.set(k, "yref", y_ref_k)
             
             # Set disturbances (current)
@@ -838,7 +834,7 @@ class Controller:
 
             self.solver.set(k, "p", param_values)
 
-        y_ref_terminal = np.array([0])  
+        y_ref_terminal = np.array([T_bat_target]) #np.array([0])  
         self.solver.set(self.N, "yref", y_ref_terminal)
         #param_values = disturbances[int(self.dt*(self.current_iterate + self.N))].item()
         param_values = 0
@@ -862,9 +858,12 @@ class Controller:
         self.total_cost += self.solver.get_cost()
         # ut = solver.get(0, "u").item()
         ut = self.solver.get(0, "u")
-        slack_lower = self.solver.get(1, "sl")
-        slack_upper = self.solver.get(1, "su")
+
+        shooting_node = 0
+        slack_lower = self.solver.get(shooting_node, "sl")
+        slack_upper = self.solver.get(shooting_node, "su")
         slx = slack_upper[2]
+        print("Slacks for shooting node {}".format(shooting_node))
         print("slack lower", slack_lower, "slack upper", slack_upper)
         
         # Saturation
@@ -971,7 +970,7 @@ class Controller:
         self.current_last = disturbances[int(self.dt*(self.current_iterate))].item()
 
         self.T_bat_last = T_bat_0
-        if (self.current_iterate * self.dt) < self.T_warm_start:
+        if (self.current_iterate * self.dt) < self.T_warm_start or (status != 0):
             if T_bat_0 > T_bat_target: # Cooling regime
                 omega_value, Q_heat_value = 4000*2*np.pi/60, -4000
             else: # Heating regime

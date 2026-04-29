@@ -229,7 +229,7 @@ class MPC:
         # Trivial PyTorch index 0
         density_coolant = 1050
         pump_displacement = 1/(2*np.pi)*40/(100**3) # D parameter in simulink
-        l4c_y_expr_row = l4c.L4CasADi(lambda u0: (295.1748  * (density_coolant*pump_displacement*u0)**2  - 187.6638 * (density_coolant*pump_displacement*u0)+ constant)/(450), name='y_expr_1')
+        l4c_y_expr_row = l4c.L4CasADi(lambda u0: (295.1748  * (model.omega_scale*density_coolant*pump_displacement*u0)**2  - 187.6638 * (model.omega_scale*density_coolant*pump_displacement*u0)+ constant)/(450), name='y_expr_1')
         ocp.model.cost_y_expr = cs.vertcat(l4c_y_expr_row(u[0]), u[1], x)
         ocp.model.cost_y_expr_0 = cs.vertcat(l4c_y_expr_row(u[0]), u[1], x)
         ocp.model.cost_y_expr_e = x

@@ -14,6 +14,10 @@ import ctypes
 import sys
 import csv
 import random as random
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import root_mean_squared_error#mean_squared_error
+from scipy.signal import savgol_filter
+
 
 seed = sum([ord(char) for char in "DIAMONDS"])
 np.random.seed(seed)
@@ -22,11 +26,17 @@ CELSIUS_TO_KELVIN = 273.15
 class MLP(nn.Module):
     def __init__(self, input_dim=2, output_dim=1, hidden_dim=128, num_layers=3):
         super(MLP, self).__init__()
-        layers = [nn.Linear(input_dim, hidden_dim), nn.ReLU()] # nn.ReLU rectified linear function (max(x,0))
+        layers = [nn.Linear(input_dim, hidden_dim, bias=True), nn.Tanh()] # nn.ReLU rectified linear function (max(x,0))
         for _ in range(num_layers - 1):
-            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU()]) # nn.Linear applies an affine transform. hidden_dim features and hidden_dim out features
-        layers.append(nn.Linear(hidden_dim, output_dim))
+            layers.extend([nn.Linear(hidden_dim, hidden_dim, bias=True), nn.Tanh()]) # nn.Linear applies an affine transform. hidden_dim features and hidden_dim out features
+        layers.append(nn.Linear(hidden_dim, output_dim, bias=True))
         self.net = nn.Sequential(*layers)
+
+        #layers = [nn.Linear(input_dim, hidden_dim), nn.ReLU()] # nn.ReLU rectified linear function (max(x,0))
+        #for _ in range(num_layers - 1):
+        #    layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU()]) # nn.Linear applies an affine transform. hidden_dim features and hidden_dim out features
+        #layers.append(nn.Linear(hidden_dim, output_dim))
+        #self.net = nn.Sequential(*layers)
 
     def forward(self, x):
         return self.net(x)
@@ -107,9 +117,10 @@ class BatteryLearnedDynamics:
 
         # MLP network
         #mlp_input = cs.vertcat(T_bat, current, U)
-        mlp_input = cs.vertcat(T_bat, current, U)
-        
+        #mlp_input = cs.vertcat(T_bat, current, U)
+        mlp_input = cs.vertcat(T_bat, current, U) #T_bat #T_bat #Q_heat_normalized
         residual = self.residual_model(mlp_input.T).T 
+
         X_dot_residual = cs.vertcat(residual[0], 0) # x1 dot and x2 dot residual
         
         f_expl = X_dot_nominal + nn_on*X_dot_residual
@@ -244,18 +255,18 @@ class BatteryLearnedDynamics:
         T_clout_eval = T_clout_fun(st, U)
 
         st_next = X[:, 1]
-        mlp_input_K1 = cs.vertcat(st, disturbances[0], U)
-        #residual = 
-        #T_bat_dot_residual = residual[0] # x1 dot and x2 dot residual
-        K1 = f_model(st, U, disturbances[0]) + disturbances[1] * self.residual_model(mlp_input_K1.T).T[0] 
-        mlp_input_K2 = cs.vertcat(st + step_horizon/2 * K1, disturbances[0], U) 
-        K2 = f_model(st + step_horizon/2 * K1, U, disturbances) +  disturbances[1] * self.residual_model(mlp_input_K2.T).T[0] 
-        mlp_input_K3 = cs.vertcat(st + step_horizon/2 * K2, disturbances[0], U)
-        K3 = f_model(st + step_horizon/2 * K2, U, disturbances) +  disturbances[1] * self.residual_model(mlp_input_K3.T).T[0] 
-        mlp_input_K4 = cs.vertcat(st + step_horizon * K3, disturbances[0], U)
-        K4 = f_model(st + step_horizon * K3, U, disturbances) + disturbances[1] * self.residual_model(mlp_input_K4.T).T[0] 
+        #mlp_input_K1 = cs.vertcat(st, disturbances[0], U)
+        #K1 = f_model(st, U, disturbances[0]) + disturbances[1] * self.residual_model(mlp_input_K1.T).T[0] 
+        #mlp_input_K2 = cs.vertcat(st + step_horizon/2 * K1, disturbances[0], U) 
+        #K2 = f_model(st + step_horizon/2 * K1, U, disturbances) +  disturbances[1] * self.residual_model(mlp_input_K2.T).T[0] 
+        #mlp_input_K3 = cs.vertcat(st + step_horizon/2 * K2, disturbances[0], U)
+        #K3 = f_model(st + step_horizon/2 * K2, U, disturbances) +  disturbances[1] * self.residual_model(mlp_input_K3.T).T[0] 
+        #mlp_input_K4 = cs.vertcat(st + step_horizon * K3, disturbances[0], U)
+        #K4 = f_model(st + step_horizon * K3, U, disturbances) + disturbances[1] * self.residual_model(mlp_input_K4.T).T[0] 
+        mlp_input_K1 = cs.vertcat(st, disturbances[0], U) #disturbances[0]  # cs.vertcat(st, disturbances[0], U)
+        K1 = f_model(st, U, disturbances[0]) + disturbances[1] * self.residual_model(mlp_input_K1.T).T[0]       
 
-        st_next_RK4 = st + (step_horizon) * (K1 + 2*K2 + 2*K3 + K4)
+        st_next_RK4 = st + (step_horizon) * K1 #+ 2*K2 + 2*K3 + K4)
 
         g = cs.vertcat(g,T_clin_eval, T_clout_eval, st_next - st_next_RK4 + slack_RK4) # Basically saying X[:, k+1] = runge kutta evaluation
 
@@ -486,6 +497,7 @@ class MPC:
         ocp.solver_options.nlp_solver_type = "SQP_RTI"
         ocp.solver_options.model_external_shared_lib_dir = self.external_shared_lib_dir
         ocp.solver_options.model_external_shared_lib_name = self.external_shared_lib_name 
+        ocp.solver_options.sim_method_num_stages = 1
         
         # Will be overwritten
         ocp.parameter_values = np.zeros((2,))
@@ -510,17 +522,21 @@ class Controller:
     def setup(self, T_bat_target, T_env):
         
         # Residual MLP: Lightweight
-        residual_mlp = MLP(input_dim = 2 + 2, output_dim=1, hidden_dim=32, num_layers=3) # the network
+        residual_mlp = MLP(input_dim = 4, output_dim=1, hidden_dim=16, num_layers=2) # the network
+        
+        #residual_mlp = MLP(input_dim = 2 + 2, output_dim=1, hidden_dim=16, num_layers=1) # the network
         for param in residual_mlp.parameters():
             param.requires_grad = False
-        residual_mlp.load_state_dict(torch.load("heating_pretrain.pth", weights_only=True))
+        residual_mlp.load_state_dict(torch.load("heating_pretrain_full_network.pth", weights_only=True))
         self.residual_mlp = residual_mlp
-        self.residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=5e-4, weight_decay=0.1) # lr = learning rate, the optimizer
+        self.residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=1e-2, weight_decay=0.1) # lr = learning rate, the optimizer
+        #self.residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-3) # lr = learning rate, the optimizer
+        #print(residual_mlp[0])
         self.residual_criterion = nn.MSELoss()
 
         l4c_residual = l4c.L4CasADi(self.residual_mlp, name="battery", mutable=True)
         self.l4c_residual = l4c_residual
-
+        print(l4c_residual)
         # MPC Setup 
         self.N = 200 # 80
         self.t_horizon = self.N*5
@@ -537,7 +553,7 @@ class Controller:
         # SOC_ref = None # This is not actually tracked
         self.dt = self.t_horizon/self.N
         self.obs_buffer = []
-        self.batch_size = 80 #30
+        self.batch_size = 40 #30
         self.T_update = self.batch_size*self.dt
         self.T_warm_start = 30
         self.current_iterate = 0
@@ -568,7 +584,9 @@ class Controller:
         args = self.steady_state_args
         
         disturbances = self.disturbance_values
-        current_N = disturbances[int(self.dt*(self.current_iterate + self.N ))].item()
+        current_N = disturbances[int(self.dt*(self.current_iterate + self.N ))].item() # 0 
+
+        #current_N = 0 
         args['p'] = cs.vertcat(
             current_N, self.nn_on
         )
@@ -599,6 +617,7 @@ class Controller:
 
         disturbances = self.disturbance_values
 
+        #current_N = 0 
         current_N = disturbances[int(self.dt*(self.current_iterate + self.N ))].item()
 
         # Parameters
@@ -637,7 +656,8 @@ class Controller:
         # Now for the actual calculations 
         T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(T_env - T_bat))
         f_T_bat_dot = cs.Function("f_model", [T_bat,current, U], [T_bat_dot_model], ["x", "I_bat", "u"], ["ode"])
-        mlp_input = cs.vertcat(T_bat, current, U)
+        mlp_input = cs.vertcat(T_bat, current, U) # T_bat
+        #mlp_input = cs.vertcat(T_bat, current, U)
 
         residual = self.l4c_residual(mlp_input.T).T 
         T_bat_dot_residual = residual[0]
@@ -680,7 +700,6 @@ class Controller:
         disturbances = self.disturbance_values
         T_env = self.T_env
         # Set reference for each step in MPC horizon
-        #print(disturbances[0], current_0)
         omega_norm_ss, Q_heat_norm_ss = self.get_steady_state(T_bat_target=T_bat_target)
         Q_e, cost_to_go = self.get_cost_to_go(T_bat_target, T_env, omega_norm_ss, Q_heat_norm_ss)
         #print("omega_ss", omega_norm_ss, "Q_heat_ss", Q_heat_norm_ss)
@@ -699,7 +718,9 @@ class Controller:
             self.solver.set(k, "yref", y_ref_k)
             # Potential for error
             # T_env must be in Kelvin
-            param_values = np.array([disturbances[int(self.dt*(self.current_iterate + k))].item(), self.nn_on])
+            param_values = np.array([disturbances[int(self.dt*(self.current_iterate + k))].item(), self.nn_on]) 
+            #param_values = np.array([0, self.nn_on]) 
+
             self.solver.set(k, "p", param_values)
 
         # Set terminal reference
@@ -707,6 +728,7 @@ class Controller:
         y_ref_terminal = np.array([T_bat_target, 0.0]) # Terminal cost only on states so 2x1 instead of 4x1 above
         #print(y_ref_terminal)
         self.solver.set(self.N, "yref", y_ref_terminal)
+        #param_values = np.array([0, self.nn_on])
         param_values = np.array([disturbances[int(self.dt*(self.current_iterate + self.N))].item(), self.nn_on])
 
         self.solver.set(self.N, "p", param_values)
@@ -784,7 +806,12 @@ class Controller:
             # Not sure if should take current values or last, but figure that at this moment the change is happening because of the last values
             omega = self.omega_last
             Q_heat = self.Q_heat_last 
+            #current = self.current_last
+            #T_bat = self.T_bat_last
+            
+            
             current = self.current_last
+            T_bat = self.T_bat_last
             T_bat_k_minus_1 = self.T_bat_last
             T_bat_k = T_bat_0
 
@@ -816,76 +843,142 @@ class Controller:
             
             # Get the cooler in and out temps
             NTU_bat  = (alpha_3*hA_bat) / (mdot_c*c_coolant + 1e-3)
-            T_clin= (self.T_bat_last + alpha_1*(1/(1-np.exp(-NTU_bat)))*Q_heat/(mdot_c*c_coolant + 1e-3))
-            T_clout = ((T_clin - self.T_bat_last) * alpha_2*np.exp(-NTU_bat) + self.T_bat_last)
+            T_clin= (T_bat + alpha_1*(1/(1-np.exp(-NTU_bat)))*Q_heat/(mdot_c*c_coolant + 1e-3))
+            T_clout = ((T_clin - T_bat) * alpha_2*np.exp(-NTU_bat) + T_bat)
           
             Q_cool = mdot_c*c_coolant*(T_clout - T_clin)
 
             T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(self.T_env - self.T_bat_last))
-
-            self.obs_buffer.append((dT_bat_euler, T_bat_dot_model))
-            self.data.append((self.T_bat_last, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale))
+            #T_bat = 100*(0.5 - random.random()
+            self.data.append((T_bat, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale))
+            #self.data.append((T_bat, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale))
             
             self.residual_mlp.eval()
 
-            current = disturbances[int(self.dt*(self.current_iterate + self.N))].item()
+            #current = disturbances[int(self.dt*(self.current_iterate))].item()
             #residual_data = torch.tensor([T_bat_k_minus_1, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale], dtype=torch.float32)
-            residual_data = torch.tensor([T_bat_k_minus_1, current, omega_norm_ss, Q_heat_norm_ss], dtype=torch.float32)
+            #residual_data = torch.tensor([Q_heat/self.Q_heat_scale], dtype=torch.float32)
+            residual_data = torch.tensor([T_bat, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale], dtype=torch.float32)
             
             residual = self.residual_mlp(residual_data).numpy().item()
+            T_bat_dot_nn = T_bat_dot_model + residual
             K1 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1, current, omega_norm_ss, Q_heat_norm_ss)).item()
-            print("deriv ss", K1 + residual)
-            #K1 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)).item()
-            #K2 = self.T_bat_dot_function(T_bat_k_minus_1 + self.dt * K1, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)
-            #K3 = self.T_bat_dot_function(T_bat_k_minus_1 + self.dt * K2, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)
-            #K4 = self.T_bat_dot_function(T_bat_k_minus_1 +  K3, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)
+            K1 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)).item()
+            K2 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1 + self.dt * K1, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)).item()
+            K3 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1 + self.dt * K2, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)).item()
+            K4 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1 +  K3, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)).item()
             
-            #T_bat_pred = T_bat_k_minus_1 + self.dt*K1 # + 2*K2 + 2*K3 + K4)
+            T_bat_pred = T_bat_k_minus_1 + self.dt*(K1 + 2*K2 + 2*K3 + K4)
 
 
             #T_bat_pred_nn =  T_bat_k_minus_1 + self.dt * (K1 + self.nn_on*residual)
-            #self.residual_mlp.train()
+           
             pred_error_nn = 0 #T_bat_pred_nn - T_bat_k
-            pred_error = 0 #T_bat_pred - T_bat_k
+            pred_error = T_bat_k - T_bat_pred  
+            pred_error_dt = pred_error/self.dt
+            #self.obs_buffer.append((pred_error_dt))
+            dynamics_residual = dT_bat_euler - T_bat_dot_model
+            self.obs_buffer.append((dynamics_residual))
+            self.residual_mlp.train()
+
         else:
-            self.obs_buffer.append((0, 0))
-            self.data = [(0,0,0,0)]
+            #self.obs_buffer.append((0, 0))
+            self.obs_buffer.append((0))
+            self.data.append((0,0,0,0))
+            #self.data = [(0,0,0,0)]
+            T_bat_dot_model = dT_bat
+            dT_bat_euler = dT_bat
+            T_bat_dot_nn = dT_bat
 
         # update every T_update = 60 
         # T_warm_start = 30
         if (self.dt*self.current_iterate) > self.T_warm_start and ((self.dt*self.current_iterate) % self.T_update) == 0 and len(self.obs_buffer) >= self.batch_size:
             self.nn_on = 1
             data = np.array(self.data[-self.batch_size:])
-            obs = np.array(self.obs_buffer)
+            #data = data.reshape((-1,1))
+            obs = np.array(self.obs_buffer[-self.batch_size:])
+            print("data")
+            print(data)
+            print(data.shape)
+            print("obs")
+            print(obs)
+            print(obs.shape)
+            X_train, X_test, y_train, y_test = train_test_split(data, obs, test_size=0.25)
+
             # data[:, :3] h1, h2 and u
-            X_batch = torch.tensor(data[:, :], dtype=torch.float32)
+            #X_batch = torch.tensor(data[:, :], dtype=torch.float32)
+            X_batch = torch.tensor(X_train, dtype=torch.float32)
+            print(y_train)
+            print(y_train.shape)
             # h1_dot, h2_dot
-            y_true = obs[-self.batch_size:, 0]
-            y_true = y_true.reshape((-1,1))
+            #y_true = y_train[:,0]
+            #y_nominal = y_train[:,1]
+            y_target = y_train
+            polyorder = 3
+            window_length = 10
+            y_target = savgol_filter(y_target, window_length=window_length, polyorder=polyorder)
+            y_train = y_train.reshape((-1,1))
+            
+            #y_true = y_true.reshape((-1,1))
         
             
 
-            y_nominal = obs[-self.batch_size:, 1]
-            y_nominal = y_nominal.reshape((-1,1))
+            #y_nominal = y_nominal.reshape((-1,1))
+            #y_target = obs[-self.batch_size:]
+            #y_target = y_target.reshape((-1,1))
+            
+            y_target = torch.tensor(y_target, dtype=torch.float32)
+            print(X_batch, y_target)
+            print(X_batch)
+            print(y_target)
 
-    
-            y_target = torch.tensor(y_true - y_nominal, dtype=torch.float32)
+
+            
             for p in self.residual_mlp.parameters(): p.requires_grad = True
-            for _ in range(100): #200 before
+            for _ in range(200): #200 before
                 self.residual_optimizer.zero_grad() # optimizer object
                 prediction = self.residual_mlp(X_batch) # gives data to network to make a prediction
                 loss = self.residual_criterion(prediction, y_target)
-                # l2_norm = sum(p.pow(2).sum() for p in self.residual_mlp.parameters())
-                # regularization = 0.1
-                # loss += regularization * l2_norm
+                #l1_norm = sum(torch.linalg.norm(p, 1) for p in self.residual_mlp.parameters())
+                #l2_norm = sum(p.pow(2).sum() for p in self.residual_mlp.parameters())
+                #regularization = 0.1
+                #loss += regularization * l1_norm
                 loss.backward() # calculates gradient
                 
                 self.residual_optimizer.step() # one optimization step to update parameters
-            for p in self.residual_mlp.parameters(): p.requires_grad = False
+            for p in self.residual_mlp.parameters(): 
+                p.requires_grad = False
+                print(p)
             #print("UPDATE MODEL AT", self.dt*self.current_iterate)
             
             self.l4c_residual.update(self.residual_mlp)
+
+            test_data = torch.tensor(X_test, dtype=torch.float32)
+            #y_true_test = y_test[:,0]
+            #y_true_test = y_true_test.reshape((-1,1))
         
+            
+
+            #y_nominal_test = y_test[:,1]
+            #y_nominal_test = y_nominal_test.reshape((-1,1))
+            #y_target = obs[-self.batch_size:]
+            #y_target = y_target.reshape((-1,1))
+            
+            y_target_test = torch.tensor(y_test, dtype=torch.float32)
+            self.residual_mlp.eval()
+            with torch.no_grad():
+                outputs = self.residual_mlp(test_data)
+                target_predicted = np.array(outputs.squeeze().tolist())
+            mse = root_mean_squared_error(y_target_test, target_predicted)
+            len_test = len(y_test)
+            null_prediction = np.zeros((len_test,))
+            print("MSE", mse)
+            mse_null_hypothesis = root_mean_squared_error(y_target_test, null_prediction)
+            print("MSE null hypothesis", mse_null_hypothesis)
+            self.residual_mlp.train()
+
+            if mse >= mse_null_hypothesis:
+                self.nn_on = 0
         # Applying random noise for better excitation
         #s_omega = s_omega_norm*2*(random.random() - 0.5)
         #s_Q_heat = s_Q_heat_norm*2*(random.random() - 0.5)
@@ -905,14 +998,16 @@ class Controller:
         self.omega_last = omega_value
         self.Q_heat_last = Q_heat_value
         self.current_last = disturbances[int(self.dt*(self.current_iterate))].item()
+        #self.current_last = 0 # disturbances[int(self.dt*(self.current_iterate))].item()
+
         #print(omega_value, Q_heat_value, self.xt_pred[0], T_bat_0, T_bat_target)
         #print("time", self.dt*self.current_iterate)
         #print("cumulative cost", self.total_cost)
-        #print("total errors", self.total_errors)
+        print("total errors", self.total_errors)
 
         elapsed = 1000*(time.time() - start)
-        #print(elapsed, 'ms')
+        print(elapsed, 'ms')
         #print("--------------------------------")
         self.current_iterate += 1
 
-        return omega_value, Q_heat_value, T_bat_pred_nn, T_bat_pred, pred_error_nn, pred_error, self.omega_scale*omega_norm_ss, self.Q_heat_scale*Q_heat_norm_ss, cost_to_go, elapsed
+        return omega_value, Q_heat_value, T_bat_pred_nn, T_bat_pred, pred_error_nn, pred_error, self.omega_scale*omega_norm_ss, self.Q_heat_scale*Q_heat_norm_ss, cost_to_go, elapsed, T_bat_dot_model, T_bat_dot_nn, dT_bat_euler, self.nn_on

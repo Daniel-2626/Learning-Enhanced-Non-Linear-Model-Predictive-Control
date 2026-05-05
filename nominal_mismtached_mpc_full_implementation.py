@@ -31,7 +31,7 @@ rho_model = 1000*nominal_ratio
 
 grav_model = 9.82
 
-sim_time = 35
+sim_time = 200
 
 
 h_1_max = 2

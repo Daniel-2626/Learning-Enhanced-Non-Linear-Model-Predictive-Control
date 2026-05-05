@@ -21,9 +21,9 @@ torch.manual_seed(seed)
 class MLP(nn.Module):
     def __init__(self, input_dim=2, output_dim=1, hidden_dim=128, num_layers=3):
         super(MLP, self).__init__()
-        layers = [nn.Linear(input_dim, hidden_dim), nn.ReLU()] # nn.ReLU rectified linear function (max(x,0))
+        layers = [nn.Linear(input_dim, hidden_dim), nn.Tanh()] # nn.ReLU rectified linear function (max(x,0))
         for _ in range(num_layers - 1):
-            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU()]) # nn.Linear applies an affine transform. hidden_dim features and hidden_dim out features
+            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.Tanh()]) # nn.Linear applies an affine transform. hidden_dim features and hidden_dim out features
         layers.append(nn.Linear(hidden_dim, output_dim))
         self.net = nn.Sequential(*layers)
 
@@ -152,9 +152,9 @@ class MPC:
         ocp.constraints.x0 = model.x_start
 
         # Set constraints
-        u_max = 5
-        h1_max = 100
-        h2_max = 100
+        u_max = 0.8
+        h1_max = 2
+        h2_max = 2
         ocp.constraints.lbu = np.array([0])
         ocp.constraints.ubu = np.array([u_max])
         ocp.constraints.idxbu = np.array([0])
@@ -213,8 +213,8 @@ def RK4(state, input_u, dt, f):
     next_state = state + (dt/6) * (K1 + 2*K2 + 2*K3 +K4)
     return next_state
 # Residual MLP: Lightweight
-residual_mlp = MLP(input_dim = 2 + 1, output_dim=2, hidden_dim=16, num_layers=3) # the network
-residual_mlp.load_state_dict(torch.load("cascaded_tanks_pretrain.pth", weights_only=True))
+residual_mlp = MLP(input_dim = 2 + 1, output_dim=2, hidden_dim=16, num_layers=2) # the network
+#residual_mlp.load_state_dict(torch.load("cascaded_tanks_pretrain.pth", weights_only=True))
 
 for param in residual_mlp.parameters():
     param.requires_grad = False
@@ -243,11 +243,11 @@ xt = np.array([0.05,0.05])
 Steps = int(Tsim / dt)
 h1_history, u_history, h1_ref_history, h2_ref_history, h2_history, opt_times = [xt[0]], [], [], [], [xt[1]], []
 
-h1_ref = 79
-h2_ref = 79
+h1_ref = 1
+h2_ref = 1
 # Residual Finetune
 obs_buffer = []
-batch_size = 40
+batch_size = 20
 T_update = 20 # int(t_horizon//(dt))
 nn_on = 0
 
@@ -341,12 +341,12 @@ for i in range(Steps):
         print(y_target)
         for p in residual_mlp.parameters(): p.requires_grad = True
         # An epoch
-        for _ in range(25):
+        for _ in range(50):
             residual_optimizer.zero_grad() # optimizer object
             prediction = residual_mlp(X_batch) # gives data to network to make a prediction
             loss = residual_criterion(prediction, y_target)
             l2_norm = sum(p.pow(2).sum() for p in residual_mlp.parameters())
-            regularization = 1
+            regularization = 0.1
             loss += regularization * l2_norm
             loss.backward() # calculates gradient
             residual_optimizer.step() # one optimization step to update parameters
@@ -355,6 +355,20 @@ for i in range(Steps):
 
     elapsed= time.time() - start
     opt_times.append(elapsed)
+# Input variables
+h1 = cs.MX.sym('h1')
+h2 = cs.MX.sym('h2')
+X = cs.vertcat(h1, h2)
+u = cs.MX.sym('u')
+mlp_input = cs.vertcat(X, u)
+residual = l4c_residual(mlp_input.T).T[0] 
+f_res = cs.Function("f_res", [X,u], [residual])
+weights = np.array([])
+for p in residual_mlp.parameters():
+    weights = np.append(weights, p.flatten())
+print(weights)
+print(len(weights))
+print(residual.str(True))
 state_target = np.array([h1_ref, h2_ref])
 ss_error = cs.norm_2(xt - state_target)
 print("final error", ss_error)

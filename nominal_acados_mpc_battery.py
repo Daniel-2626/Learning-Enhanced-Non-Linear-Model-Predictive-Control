@@ -465,6 +465,7 @@ class MPC:
         ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
         ocp.solver_options.integrator_type = "ERK"
         ocp.solver_options.nlp_solver_type = "SQP_RTI"
+        ocp.solver_options.sim_method_num_stages = 1
         
         # Will be overwritten
         ocp.parameter_values = 0
@@ -532,9 +533,11 @@ class Controller:
         args = self.steady_state_args
         
         disturbances = self.disturbance_values
-        current_0 = disturbances[int(self.dt*(self.current_iterate + self.N))].item()
+        #current_N = 0 
+        current_N = disturbances[int(self.dt*(self.current_iterate + self.N))].item()
+
         args['p'] = cs.vertcat(
-            current_0,
+            current_N,
         )
         sol = self.steady_state_solver(
             x0 = args['x0'],
@@ -657,7 +660,7 @@ class Controller:
         Q_cool = mdot_c*c_coolant*(T_clout - T_clin)
 
         T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(self.T_env - self.T_bat_last))
-        residual = dT_bat - T_bat_dot_model
+        residual = dT_bat_euler - T_bat_dot_model
 
         self.obs_buffer.append((dT_bat_euler, T_bat_dot_model))
         self.data.append((self.T_bat_last, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale))
@@ -704,7 +707,9 @@ class Controller:
             # Potential for error
             # T_env must be in Kelvin
             
+            #param_values = 0
             param_values = disturbances[int(self.dt*(self.current_iterate + k))].item()
+            
             self.solver.set(k, "p", param_values)
 
         # Set terminal reference
@@ -712,7 +717,9 @@ class Controller:
         y_ref_terminal = np.array([T_bat_target, 0.0]) # Terminal cost only on states so 2x1 instead of 4x1 above
         #print(y_ref_terminal)
         self.solver.set(self.N, "yref", y_ref_terminal)
+        #param_values = 0
         param_values = disturbances[int(self.dt*(self.current_iterate + self.N))].item()
+
         self.solver.set(self.N, "p", param_values)
 
         self.solver.cost_set(self.N, 'W', Q_e)
@@ -759,8 +766,9 @@ class Controller:
         T_bat_pred = 0
         T_bat_pred_nn = 0
         # Collect training data for NN
-
-        
+        T_bat_dot_model = dT_bat
+        T_bat_dot_nn = dT_bat
+        dT_bat_euler = dT_bat
         if self.current_iterate  > 0:
 
             # input and disturbance values (not symbolics because know what happened)
@@ -817,6 +825,7 @@ class Controller:
             #T_bat_pred = T_bat_k_minus_1 + self.dt * (T_bat_dot_model)
             pred_error_nn = T_bat_pred - T_bat_k
             T_bat_pred_nn = T_bat_pred
+            T_bat_dot_nn = T_bat_dot_model
 
         #u_N = self.solver.get(10,'u')
         #print('slacking off input', u_N)
@@ -836,7 +845,8 @@ class Controller:
         self.x_last = xt
         self.omega_last = omega_value
         self.Q_heat_last = Q_heat_value
-        self.current_last = disturbances[int(self.dt*(self.current_iterate))].item()
+        self.current_last = disturbances[int(self.dt*(self.current_iterate))].item()        
+        #self.current_last = 0 
 
         self.T_bat_last = T_bat_0
         if (self.current_iterate * self.dt) < self.T_warm_start:
@@ -847,7 +857,7 @@ class Controller:
         if self.current_iterate > 0:
             self.collect_data(T_bat_0, dT_bat)
   
-        if self.dt*self.current_iterate >= 2470:
+        if self.dt*self.current_iterate >= 3*2470:
             df = pd.DataFrame(data=self.residual_dictionary)
             df.to_csv("residuals.csv", index=False)
 
@@ -860,5 +870,5 @@ class Controller:
         print(elapsed, 'ms')
         print("--------------------------------")
         self.current_iterate += 1
-
-        return omega_value, Q_heat_value, T_bat_pred_nn, T_bat_pred, pred_error_nn, pred_error, self.omega_scale*omega_norm_ss, self.Q_heat_scale*Q_heat_norm_ss, cost_to_go, elapsed
+        nn_on = 0
+        return omega_value, Q_heat_value, T_bat_pred_nn, T_bat_pred, pred_error_nn, pred_error, self.omega_scale*omega_norm_ss, self.Q_heat_scale*Q_heat_norm_ss, cost_to_go, elapsed, T_bat_dot_model, T_bat_dot_nn, dT_bat_euler, nn_on

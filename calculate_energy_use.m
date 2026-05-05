@@ -1,67 +1,107 @@
 %% Simulator set-up
-N_reps = 4;
+N_reps = 2;
 
 %% Get data
-logged_data_traditional = load("Simulation_Data/adaptive_mpc_for_benchmark_t_env_17_steady_state_check.mat");
+logged_data_traditional = load("Simulation_Data/thermal_management_energy_cooling_matched_bigger.mat");
 outputs_traditional = logged_data_traditional.data;
 
 time_traditional = getElement(outputs_traditional, "time").Values.Data;
+omega_traditional = getElement(outputs_traditional, "input_omega").Values.Data;
 pump_power_traditional = getElement(outputs_traditional, "pump_power").Values.Data;
 heatingPwr_traditional = abs(getElement(outputs_traditional, "heatingPwr").Values.Data);
 T_bat_traditional = getElement(outputs_traditional, "Pack3").Values.Data;
 
 %% Get data
-logged_data_mpc = load("Simulation_Data/adaptive_mpc_for_benchmark_t_env_17_steady_state_check_residual_update.mat");
-outputs_mpc = logged_data_mpc.data;
-
-time_mpc = getElement(outputs_mpc, "time").Values.Data;
-pump_power_mpc = getElement(outputs_mpc, "pump_power").Values.Data;
-heatingPwr_mpc = abs(getElement(outputs_mpc, "heatingPwr").Values.Data);
-T_bat_mpc = getElement(outputs_mpc, "Pack3").Values.Data;
+logged_data_nn = load("Simulation_Data/adaptive_thermal_management_energy_cooling_matched_bigger.mat");
+outputs_nn = logged_data_nn.data;
+omega_nn = getElement(outputs_nn, "input_omega").Values.Data;
+time_nn = getElement(outputs_nn, "time").Values.Data;
+pump_power_nn = getElement(outputs_nn, "pump_power").Values.Data;
+heatingPwr_nn = abs(getElement(outputs_nn, "heatingPwr").Values.Data);
+T_bat_nn = getElement(outputs_nn, "Pack3").Values.Data;
 
 
 %% Interpolation
 dt = 1;
 t = 1:dt:N_reps*2474;
 pump_power_traditional_interp = interp1(time_traditional, pump_power_traditional, t);
-%heating_power_traditional_interp = interp1(time_traditional, heatingPwr_traditional, t);
-%heating_power_traditional_interp = interp1(time_traditional, heatingPwr_traditional, t,'previous', 'extrap');
 
 T_bat_traditional_interp = interp1(time_traditional, T_bat_traditional, t);
 
-pump_power_mpc_interp = interp1(time_mpc, pump_power_mpc, t);
-time_mpc_heat_pwr = 0:5:N_reps*2474;
-%heating_power_mpc_interp = interp1(time_mpc, heatingPwr_mpc, t,'previous', 'extrap');
-%heating_power_mpc_interp(isnan(heating_power_mpc_interp))=0;
-T_bat_mpc_interp = interp1(time_mpc, T_bat_mpc, t);
+pump_power_nn_interp = interp1(time_nn, pump_power_nn, t);
+time_mpc_heat_pwr = 1:5:N_reps*2474;
 
+T_bat_mpc_nn_interp = interp1(time_nn, T_bat_nn, t);
 
 %% Riemman sum
 hour_in_sec = 1/3600;
-heating_energy_traditional = 1*hour_in_sec*sum(heatingPwr_traditional)/1000; % Heating power in Watts, convert to kW
+
+heating_energy_traditional = 5*hour_in_sec*sum(heatingPwr_traditional)/1000; % Heating power in Watts, convert to kW
 pump_energy_traditional = hour_in_sec*sum(pump_power_traditional_interp);
 energy_traditional = heating_energy_traditional + pump_energy_traditional;
-heating_energy_mpc = 5*hour_in_sec*sum(heatingPwr_mpc)/1000; % heating power set every 5 s
-pump_energy_mpc = hour_in_sec*sum(pump_power_mpc_interp);
-energy_mpc = heating_energy_mpc + pump_energy_mpc;
+
+heating_energy_nn = 5*hour_in_sec*sum(heatingPwr_nn)/1000; % heating power set every 5 s
+pump_energy_nn = hour_in_sec*sum(pump_power_nn_interp);
+energy_nn = heating_energy_nn + pump_energy_nn;
 
 %%
-plot(t,T_bat_mpc_interp, 'LineWidth',6)
+figure(1)
+plot(t,T_bat_mpc_nn_interp, 'LineWidth',6)
 hold on
 plot(t,T_bat_traditional_interp, 'LineWidth',6)
-yline(20.5-1, 'LineWidth',6, 'LineStyle','--')
+yline(12, 'LineWidth',6, 'LineStyle','--')
 yline(20.5, '-', 'Set-point', 'LineWidth',6, 'LabelHorizontalAlignment','left')
-yline(20.5+1, 'LineWidth',6, 'LineStyle','--')
-ytop = (20.5+1)*ones(1,N_reps*2474);
-ybottom = (20.5-1)*ones(1,N_reps*2474);
+yline(28, 'LineWidth',6, 'LineStyle','--')
+ytop = (28)*ones(1,N_reps*2474);
+ybottom = (12)*ones(1,N_reps*2474);
 patch([t, flip(t)], [ybottom, ytop], [0.5, 0.5, 0.5], 'EdgeColor', 'none', 'FaceAlpha', 0.3)
-axis([0, N_reps*2474, 14, 27])
+axis([1, N_reps*2474, 10, 30])
 legend("NN+MPC", "MPC")
 xlabel("Time (s)")
 ylabel(['Temperature (C' char(176) ')'])
+fontsize(32, 'points')
 
-%%
-plot(heatingPwr_mpc, LineWidth=2)
+%% heating power
+figure(2)
+plot(time_mpc_heat_pwr,heatingPwr_nn/1000, 'LineWidth',3)
+average_heatingPwr_nn = mean(heatingPwr_nn/1000)
 hold on
-plot(heatingPwr_traditional, LineWidth=2)
+plot(time_mpc_heat_pwr,heatingPwr_traditional/1000, 'LineWidth',3)
+average_heatingPwr_traditional = mean(heatingPwr_traditional/1000)
+
 legend("NN+MPC", "MPC")
+xlabel("Time (s)")
+ylabel(['Power (kW)'])
+fontsize(32, 'points')
+
+
+%% pump power
+figure(3)
+
+plot(t,pump_power_nn_interp, 'LineWidth',3)
+average_pump_power_nn = mean(pump_power_nn_interp)
+
+hold on
+plot(t,pump_power_traditional_interp, 'LineWidth',3)
+average_pump_power_traditional = mean(pump_power_traditional_interp)
+
+legend("NN+MPC", "MPC")
+xlabel("Time (s)")
+ylabel(['Power (kW)'])
+fontsize(32, 'points')
+
+%% pump power based on function
+figure(4)
+pump_power_nn_function = Pump_Power(omega_nn)
+plot(pump_power_nn_function)
+hold on
+plot(pump_power_nn_interp)
+
+%% Energy use based on fitted power
+function P = Pump_Power(omega)
+    constant = 50;
+    density_coolant = 1050;
+    pump_displacement = 1/(2*pi)*40/(100^3); % D parameter in simulink
+    mdot_c = density_coolant*pump_displacement.*omega;
+    P = (295.1748  * mdot_c.^2  - 187.6638 .* mdot_c+ constant)/1;
+end

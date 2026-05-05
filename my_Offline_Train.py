@@ -9,6 +9,8 @@ from torch.func import functional_call
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
+from scipy.signal import savgol_filter
+
 import random
 
 seed = 42
@@ -19,23 +21,27 @@ torch.manual_seed(seed)
 csv_path = os.path.join(os.path.dirname(__file__), 'residuals.csv')
 df = pd.read_csv(csv_path)
 print(df.head())
+#input_data = df[['T_bat', 'current', 'omega_scaled', 'Q_heat_scaled']].to_numpy()
 input_data = df[['T_bat', 'current', 'omega_scaled', 'Q_heat_scaled']].to_numpy()
 #input_data = df[['h1', 'h2', 'u']].to_numpy()
 print(input_data)
 #residuals = df[['residual_1', 'residual_2']].to_numpy()
 residuals = df[['residual']].to_numpy()
 
-X_train, X_test, y_train, y_test = train_test_split(input_data, residuals, test_size=0.5)
-
-
+X_train, X_test, y_train, y_test = train_test_split(input_data, residuals, test_size=0.3)
+polyorder = 3
+window_length = 5
+y_train = y_train.reshape((1,-1))
+y_train = savgol_filter(y_train, window_length=window_length, polyorder=polyorder)
+y_train = y_train.reshape((-1,1))
 # MLP model definition
 class MLP(nn.Module):
     def __init__(self, input_dim=4, output_dim=2, hidden_dim=16, num_layers=3):
         super().__init__()
-        layers = [nn.Linear(input_dim, hidden_dim), nn.ReLU()]
+        layers = [nn.Linear(input_dim, hidden_dim), nn.Tanh()]
         
         for _ in range(num_layers - 1):
-            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU()])
+            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.Tanh()])
         layers.append(nn.Linear(hidden_dim, output_dim))
         self.net = nn.Sequential(*layers)
     def forward(self, x):
@@ -50,32 +56,37 @@ def main():
     learning_rate = 1e-3
     input_dim = 4
     output_dim = 1
-    hidden_dim = 32
-    num_layers = 3
+    hidden_dim = 16
+    num_layers = 2
 
     model = MLP(input_dim=input_dim, output_dim=output_dim, hidden_dim=hidden_dim, num_layers=num_layers).to(device)
     residual_mlp = MLP(input_dim = input_dim, output_dim=output_dim, hidden_dim=hidden_dim, num_layers=num_layers) # the network
     for param in residual_mlp.parameters():
         param.requires_grad = False
     residual_mlp = residual_mlp
-    residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=learning_rate) # lr = learning rate, the optimizer
-    residual_criterion = nn.MSELoss()
+    residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=learning_rate, weight_decay=0.1) # lr = learning rate, the optimizer
+    #residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=learning_rate) # lr = learning rate, the optimizer
     
+    residual_criterion = nn.MSELoss()
+    print(y_train.shape)
     X_batch = torch.tensor(X_train, dtype=torch.float32)
     y_target = torch.tensor(y_train, dtype=torch.float32)
-
+    
     for p in residual_mlp.parameters(): p.requires_grad = True
     for _ in range(200):
         residual_optimizer.zero_grad() # optimizer object
         prediction = residual_mlp(X_batch) # gives data to network to make a prediction
         loss = residual_criterion(prediction, y_target)
-        l2_norm = sum(p.pow(2).sum() for p in residual_mlp.parameters())
-        regularization = 10
-        loss += regularization * l2_norm
+        #l1_norm = sum(torch.linalg.norm(p, 1) for p in residual_mlp.parameters())
+        #l2_norm = sum(p.pow(2).sum() for p in self.residual_mlp.parameters())
+        #regularization = 0.1
+        #loss += regularization * l1_norm
         loss.backward() # calculates gradient
         residual_optimizer.step() # one optimization step to update parameters
-    for p in residual_mlp.parameters(): p.requires_grad = False
-    torch.save(residual_mlp.state_dict(), "heating_pretrain.pth")
+    for p in residual_mlp.parameters(): 
+        p.requires_grad = False
+        print(p)
+    torch.save(residual_mlp.state_dict(), "heating_pretrain_full_network.pth")
 
     test_data = torch.tensor(X_test, dtype=torch.float32)
     residual_mlp.eval()

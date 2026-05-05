@@ -10,6 +10,10 @@ time = timeseries.Time;
 time_steps = 1:1:2474;
 current_intp1 = interp1(time,current,time_steps);
 
+%% FFT
+power_fft = abs(fft(current_intp1));
+plot(power_fft)
+
 %% Validation
 plot(time_steps, current_intp1, 'LineWidth',2)
 hold on 

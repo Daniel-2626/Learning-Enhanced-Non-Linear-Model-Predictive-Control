@@ -780,7 +780,7 @@ class Controller:
             self.residual_mlp.train()
 
             if mse >= mse_null_hypothesis:
-                self.nn_on = 1
+                self.nn_on = 0
         # Applying random noise for better excitation
         #s_omega = s_omega_norm*2*(random.random() - 0.5)
         #s_Q_heat = s_Q_heat_norm*2*(random.random() - 0.5)

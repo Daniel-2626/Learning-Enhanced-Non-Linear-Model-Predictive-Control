@@ -128,7 +128,6 @@ class BatteryDynamics:
 
         
         return model, constraint 
-
 class MPC:
     def __init__(self, model, constraint, N, t_horizon):
         self.model = model

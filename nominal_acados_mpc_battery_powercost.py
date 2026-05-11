@@ -103,7 +103,12 @@ class BatteryDynamics:
         # Power function (for cost)
         constant = 50 #18.1336
         #Power =  (295.1748  * mdot_c**2 - 187.6638 * mdot_c + constant)/(model.omega_scale) + (Q_heat)/(model.Q_heat_scale) 
-        Pump_power = (295.1748  * mdot_c**2  - 187.6638 * mdot_c+ constant)/(450)
+        
+        #[-0.21574\  -2.21654e-09\  10.0501\  6.84987] 
+        
+        Pump_power = (-0.21574 + 10.0501*omega_normalized**2 + 6.84987*omega_normalized**3)/1000 # Casadi pump fit 3rd degree
+        #Pump_power = (295.1748  * mdot_c**2  - 187.6638 * mdot_c+ constant)/(450)
+        
         #Pump_power = (295.1748  * mdot_c**2)/530
         #Pump_power = omega/model.omega_scale
         Heating_power = Q_heat/model.Q_heat_scale 
@@ -206,13 +211,13 @@ class MPC:
         # Define weight parameters
         # Q = np.diag([10, 0.1])
         # R = np.diag([1,1])
-        Q = np.array([1.0, 1.0, 0.01])
+        Q = np.array([100, 100, 0.0])
         Q = np.diag(Q)
         # ocp.cost.W = scipy.linalg.block_diag(Q,R)
         # ocp.cost.W_e = Q 
         ocp.cost.W_0 = Q
         ocp.cost.W = Q
-        ocp.cost.W_e = np.diag(np.array([0.01]))
+        ocp.cost.W_e = np.diag(np.array([0.0]))
 
         ocp.cost.yref_0 = np.zeros((ny, ))
         ocp.cost.yref = np.zeros((ny, ))
@@ -313,28 +318,30 @@ class MPC:
         ocp.constraints.idxsh_0 = np.array(range(nsh)) # Slack on initial shooting for nonlinear constraint
         ocp.constraints.idxsh = np.array(range(nsh)) # Slack on nonlinear constraint
 
-        ocp.constraints.idxsbu = np.array(range(nsu)) # Slack on u
+        #ocp.constraints.idxsbu = np.array(range(nsu)) # Slack on u
 
         
         # Slack cost
-        ocp.cost.zl = 10000 * np.zeros((ns,))
-        ocp.cost.zu = 10000 * np.zeros((ns,))
-        ocp.cost.Zl = 10000 * np.ones((ns,))
-        ocp.cost.Zu = 10000 * np.ones((ns,))
-        #ocp.cost.Zl[1] = 1
-        ocp.cost.Zl[2] = 100
-        #ocp.cost.Zu[1] = 1
-        ocp.cost.Zu[2] = 100
+        ocp.cost.zl = 10000 * np.zeros((nsx+nsh,))
+        ocp.cost.zu = 10000 * np.zeros((nsx+nsh,))
+        ocp.cost.Zl = 10000 * np.ones((nsx+nsh,))
+        ocp.cost.Zu = 10000 * np.ones((nsx+nsh,))
+       
+        ocp.cost.zl[0] = 1000
+        ocp.cost.zu[0] = 1000
         
-        ocp.cost.zl_0 = 10000 * np.zeros((nsh+nsu,))
-        ocp.cost.zu_0 = 10000 * np.zeros((nsh+nsu,))
-        ocp.cost.Zl_0 = 10000* np.ones((nsh+nsu,))
-        ocp.cost.Zu_0 = 10000* np.ones((nsh+nsu,))
+        ocp.cost.Zl[0] = 1
+        ocp.cost.Zu[0] = 1
 
-        ocp.cost.zl_e = 1000 * np.zeros((nsx,))
-        ocp.cost.zu_e = 1000 * np.zeros((nsx,))
-        ocp.cost.Zl_e = 1000* np.ones((nsx,))
-        ocp.cost.Zu_e = 1000 * np.ones((nsx,))
+        ocp.cost.zl_0 = 10000 * np.zeros((nsh,))
+        ocp.cost.zu_0 = 10000 * np.zeros((nsh,))
+        ocp.cost.Zl_0 = 10000* np.ones((nsh,))
+        ocp.cost.Zu_0 = 10000* np.ones((nsh,))
+
+        ocp.cost.zl_e = 10000 * np.ones((nsx,))
+        ocp.cost.zu_e = 10000 * np.ones((nsx,))
+        ocp.cost.Zl_e = 1* np.ones((nsx,))
+        ocp.cost.Zu_e = 1* np.ones((nsx,))
 
         # Solver options
         ocp.solver_options.qp_solver = "FULL_CONDENSING_HPIPM"
@@ -400,7 +407,7 @@ class Controller:
         self.T_env = T_env
 
         #self.residual_dictionary = {'run': [], 'T_bat':[], 'current': [], 'omega_scaled':[], 'Q_heat_scaled':[], 'residual': []}
-        self.residual_dictionary = {'run': [], 'T_bat':[], 'current': [], 'omega_scaled': [], 'Q_heat_scaled': [], 'Q_cool':[], 'residual': []}
+        self.residual_dictionary = {'run': [], 'T_bat':[], 'current': [], 'omega_scaled': [], 'Q_heat_scaled': [], 'Q_cool':[], 'residual': [], 'T_bat_dot_model': [], 'T_bat_dot_euler': []}
         
         # Reading disturbance info
         df = pd.read_csv("current_intp1.csv", names=["current"])
@@ -457,17 +464,21 @@ class Controller:
         self.obs_buffer.append((dT_bat_euler, T_bat_dot_model))
         self.data.append((self.T_bat_last, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale))
         self.residual_dictionary['run'].append(0)
-        self.residual_dictionary['T_bat'].append(self.T_bat_last)
-        self.residual_dictionary['current'].append(current)
+        self.residual_dictionary['T_bat'].append(self.T_bat_last/self.T_bat_scale)
+        self.residual_dictionary['current'].append(current/self.current_scale)
         self.residual_dictionary['Q_cool'].append(Q_cool)
         self.residual_dictionary['omega_scaled'].append(omega/self.omega_scale)
         self.residual_dictionary['Q_heat_scaled'].append(Q_heat/self.Q_heat_scale)
         self.residual_dictionary['residual'].append(residual)
+        self.residual_dictionary['T_bat_dot_model'].append(T_bat_dot_model)
+        self.residual_dictionary['T_bat_dot_euler'].append(dT_bat_euler)
+
+
 
     def get_input(self, T_bat_target, T_bat_0, SOC_0, current_0, dT_bat, dSOC):
        
         print("--------------------------------")
-        print("ECONOMIC ACADOS MPC BATTERY MODEL WITH TARGET TRACKING AND COST-TO-GO")
+        print("ECONOMIC ACADOS MPC BATTERY MODEL")
         if self.current_iterate == 0:
             #self.xt_pred = ([T_bat_0, SOC_0])
             self.xt_pred = ([T_bat_0])
@@ -485,54 +496,24 @@ class Controller:
         disturbances = self.disturbance_values
         T_env = self.T_env
 
-        # Set reference for each step in MPC horizon
-        #print(disturbances[0], current_0)
-        #omega_norm_ss, Q_heat_norm_ss = self.get_steady_state(T_bat_target=T_bat_target)
-
-        # Q_e, cost_to_go = self.get_cost_to_go(T_bat_target, T_env, omega_norm_ss, Q_heat_norm_ss)
-        # print("omega_ss", omega_norm_ss, "Q_heat_ss", Q_heat_norm_ss)
-        # print("Q_e", Q_e)
-
-        # for k in range(self.N):
-        #     #if k == 0: # only store first reference
-        #         #Tb_ref_history.append(Tb_ref)
-        #         # SOC_ref_history.append(SOC_ref)
-        #     # Set terminal reference
-        #     # y_ref_k = np.array([Tb_ref, SOC_ref, 0])
-        #     y_ref_k = np.array([T_bat_target, 0.0, omega_norm_ss, Q_heat_norm_ss])
-        #     self.solver.set(k, "yref", y_ref_k)
-        #     # Potential for error
-        #     # T_env must be in Kelvin
-            
-        #     param_values = disturbances[int(self.dt*(self.current_iterate + k))].item()
-        #     self.solver.set(k, "p", param_values)
-
-        # # Set terminal reference
-        # # y_ref_terminal = np.array([Tb_ref, SOC_ref])
-        # y_ref_terminal = np.array([T_bat_target, 0.0]) # Terminal cost only on states so 2x1 instead of 4x1 above
-        # #print(y_ref_terminal)
-        # self.solver.set(self.N, "yref", y_ref_terminal)
-        # param_values = disturbances[int(self.dt*(self.current_iterate + self.N))].item()
-        # self.solver.set(self.N, "p", param_values)
-
-        # self.solver.cost_set(self.N, 'W', Q_e)
+ 
 
         for k in range(self.N):
             # For stage cost: [T_bat_target, Power_target]
             # Power_target = 0 to minimize power consumption
-            y_ref_k = np.array([0,0, T_bat_target])  
+            y_ref_k = np.array([0,0, 0])  
             self.solver.set(k, "yref", y_ref_k)
             
             # Set disturbances (current)
             param_values = disturbances[int(self.dt*(self.current_iterate + k))].item()
-            #param_values = 0
+            param_values = 0
 
             self.solver.set(k, "p", param_values)
 
-        y_ref_terminal = np.array([T_bat_target]) #np.array([0])  
+        y_ref_terminal = np.array([0]) #np.array([0])  
         self.solver.set(self.N, "yref", y_ref_terminal)
-        param_values = disturbances[int(self.dt*(self.current_iterate + self.N))].item()
-        #param_values = 0
+        #param_values = disturbances[int(self.dt*(self.current_iterate + self.N))].item()
+        param_values = 0
         self.solver.set(self.N, "p", param_values)
 
         #Q_e = 10
@@ -662,20 +643,22 @@ class Controller:
         self.x_last = xt
         self.omega_last = omega_value
         self.Q_heat_last = Q_heat_value
-        self.current_last = disturbances[int(self.dt*(self.current_iterate))].item()
-
+        self.current_last = 0
+        #self.current_last = disturbances[int(self.dt*(self.current_iterate))].item()
+        if self.dt*self.current_iterate >= 1*2470:
+            df = pd.DataFrame(data=self.residual_dictionary)
+            df.to_csv("residuals.csv", index=False)
+        if self.current_iterate > 0:
+            self.collect_data(T_bat_0, dT_bat)
+  
         self.T_bat_last = T_bat_0
         if (self.current_iterate * self.dt) < self.T_warm_start or (status != 0):
             if T_bat_0 > T_bat_target: # Cooling regime
                 omega_value, Q_heat_value = 4000*2*np.pi/60, -4000
             else: # Heating regime
                 omega_value, Q_heat_value = 4000*2*np.pi/60, 4000
-        if self.current_iterate > 0:
-            self.collect_data(T_bat_0, dT_bat)
-  
-        if self.dt*self.current_iterate >= 2470:
-            df = pd.DataFrame(data=self.residual_dictionary)
-            df.to_csv("residuals.csv", index=False)
+
+
 
         elapsed = 1000*(time.time() - start)
 

@@ -1,8 +1,8 @@
 %% Simulator set-up
-N_reps = 2;
+N_reps = 5;
 
 %% Get data
-logged_data_traditional = load("Simulation_Data/thermal_management_energy_cooling_matched_bigger.mat");
+logged_data_traditional = load("Simulation_Data/thermal_management_energy_cooling_matched_sg_3_input.mat");
 outputs_traditional = logged_data_traditional.data;
 
 time_traditional = getElement(outputs_traditional, "time").Values.Data;
@@ -12,7 +12,7 @@ heatingPwr_traditional = abs(getElement(outputs_traditional, "heatingPwr").Value
 T_bat_traditional = getElement(outputs_traditional, "Pack3").Values.Data;
 
 %% Get data
-logged_data_nn = load("Simulation_Data/adaptive_thermal_management_energy_cooling_matched_bigger.mat");
+logged_data_nn = load("Simulation_Data/adaptive_thermal_management_energy_cooling_matched_sg_3_input.mat");
 outputs_nn = logged_data_nn.data;
 omega_nn = getElement(outputs_nn, "input_omega").Values.Data;
 time_nn = getElement(outputs_nn, "time").Values.Data;
@@ -55,18 +55,18 @@ yline(28, 'LineWidth',6, 'LineStyle','--')
 ytop = (28)*ones(1,N_reps*2474);
 ybottom = (12)*ones(1,N_reps*2474);
 patch([t, flip(t)], [ybottom, ytop], [0.5, 0.5, 0.5], 'EdgeColor', 'none', 'FaceAlpha', 0.3)
-axis([1, N_reps*2474, 10, 30])
-legend("NN+MPC", "MPC")
+axis([1, N_reps*2474, 20, 29])
+legend("NN+MPC", "MPC",'Location','northwest')
 xlabel("Time (s)")
 ylabel(['Temperature (C' char(176) ')'])
 fontsize(32, 'points')
 
 %% heating power
 figure(2)
-plot(time_mpc_heat_pwr,heatingPwr_nn/1000, 'LineWidth',3)
+plot(heatingPwr_nn/1000, 'LineWidth',3)
 average_heatingPwr_nn = mean(heatingPwr_nn/1000)
 hold on
-plot(time_mpc_heat_pwr,heatingPwr_traditional/1000, 'LineWidth',3)
+plot(heatingPwr_traditional/1000, 'LineWidth',3)
 average_heatingPwr_traditional = mean(heatingPwr_traditional/1000)
 
 legend("NN+MPC", "MPC")
@@ -92,16 +92,19 @@ fontsize(32, 'points')
 
 %% pump power based on function
 figure(4)
-pump_power_nn_function = Pump_Power(omega_nn)
+pump_power_nn_function = Pump_Power(omega_nn);
+pump_power_traditional_function = Pump_Power(omega_traditional);
+
 plot(pump_power_nn_function)
 hold on
-plot(pump_power_nn_interp)
+plot(pump_power_nn_interp(1:5:end))
 
 %% Energy use based on fitted power
 function P = Pump_Power(omega)
-    constant = 50;
-    density_coolant = 1050;
-    pump_displacement = 1/(2*pi)*40/(100^3); % D parameter in simulink
-    mdot_c = density_coolant*pump_displacement.*omega;
-    P = (295.1748  * mdot_c.^2  - 187.6638 .* mdot_c+ constant)/1;
+    omega_norm = omega/100;
+    %constant = 50;
+    %density_coolant = 1050;
+    %pump_displacement = 1/(2*pi)*40/(100^3); % D parameter in simulink
+    %mdot_c = density_coolant*pump_displacement.*omega;
+    P = (-0.21574 +  10.0501.*omega_norm.^2 + 6.84987 .* omega_norm.^3)/1000;
 end

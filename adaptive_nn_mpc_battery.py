@@ -436,19 +436,7 @@ class MPC:
         ocp.constraints.ubx = np.array([Tb_max])
         ocp.constraints.lbx = np.array([Tb_min])
         
-        # Maybe will complain that constraint is a parameter
-        ocp.constraints.lh = np.array(
-        [
-            model.T_env,
-            model.T_env
-        ]
-        )
-        ocp.constraints.uh = np.array(
-            [
-                constraint.T_clin_max,
-                constraint.T_clout_max
-            ]
-        )
+
         ocp.cost.zl = 100000 * np.zeros((ns,))
         ocp.cost.zu = 100000 * np.zeros((ns,))
         ocp.cost.Zl = 100000* np.ones((ns,))
@@ -770,11 +758,12 @@ class Controller:
         # ut = solver.get(0, "u").item()
         ut = self.solver.get(0, "u")
         #print("SOLVER solution", ut)
-        slack_lower = self.solver.get(0, "sl")
-        slack_upper = self.solver.get(0, "su")
-        #print("slack lower", slack_lower, "slack upper", slack_upper)
-        
-        # Saturation
+        shooting_node = 1
+        slack_lower = self.solver.get(shooting_node, "sl")
+        slack_upper = self.solver.get(shooting_node, "su")
+        slack_x = [slack_upper[2], slack_lower[2]]
+        print("Slacks for shooting node {}".format(shooting_node))
+        print("slack lower", slack_lower, "slack upper", slack_upper)        # Saturation
         #omega_value = min(ut[0].item(), omega_max - s_omega_norm)
         #Q_heat_value = min(ut[1].item(), Q_heat_max - s_Q_heat_norm)
         #omega_value = max(omega_value, omega_min + s_omega_norm)
@@ -863,12 +852,12 @@ class Controller:
             residual = self.residual_mlp(residual_data).numpy().item()
             T_bat_dot_nn = T_bat_dot_model + residual
             K1 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1, current, omega_norm_ss, Q_heat_norm_ss)).item()
-            K1 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)).item()
-            K2 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1 + self.dt * K1, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)).item()
-            K3 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1 + self.dt * K2, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)).item()
-            K4 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1 +  K3, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)).item()
+            #K1 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)).item()
+            #K2 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1 + self.dt * K1, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)).item()
+            #K3 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1 + self.dt * K2, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)).item()
+            #K4 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1 +  K3, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)).item()
             
-            T_bat_pred = T_bat_k_minus_1 + self.dt*(K1 + 2*K2 + 2*K3 + K4)
+            T_bat_pred = T_bat_k_minus_1 + self.dt*(K1) # + 2*K2 + 2*K3 + K4)
 
 
             #T_bat_pred_nn =  T_bat_k_minus_1 + self.dt * (K1 + self.nn_on*residual)

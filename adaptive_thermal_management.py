@@ -17,6 +17,7 @@ import random as random
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import root_mean_squared_error#mean_squared_error
 from scipy.signal import savgol_filter
+from scipy import signal
 
 
 seed = sum([ord(char) for char in "DIAMONDS"])
@@ -111,7 +112,7 @@ class BatteryLearnedDynamics:
         # MLP network
         #mlp_input = cs.vertcat(T_bat, current, U)
         #mlp_input = cs.vertcat(T_bat, current, U)
-        mlp_input = cs.vertcat(T_bat, current, U) #T_bat #T_bat #Q_heat_normalized
+        mlp_input = cs.vertcat(T_bat, current, Q_heat_normalized) #T_bat #T_bat #Q_heat_normalized
         residual = self.residual_model(mlp_input.T).T 
 
         X_dot_residual = cs.vertcat(residual[0]) # x1 dot and x2 dot residual
@@ -120,8 +121,10 @@ class BatteryLearnedDynamics:
         x_start = np.array([T_env]) # initial constraint (gets overwritten)
 
         # Power function (for cost)
-        constant = 50 #18.1336
-        Pump_power = (295.1748  * mdot_c**2  - 187.6638 * mdot_c+ constant)/(450)
+        #constant = 50 #18.1336
+        #Pump_power = (295.1748  * mdot_c**2  - 187.6638 * mdot_c+ constant)/(450)
+        Pump_power = (-0.21574 + 10.0501*omega_normalized**2 + 6.84987*omega_normalized**3)/1000 # Casadi pump fit 3rd degree
+
         Heating_power = Q_heat/model.Q_heat_scale 
         cost = cs.vertcat(Pump_power, Heating_power, T_bat)
         cost_function = cs.Function("cost_function", [omega_normalized, Q_heat_normalized, T_bat], 
@@ -215,26 +218,7 @@ class MPC:
         ocp.cost.cost_type_e = 'NONLINEAR_LS'
 
 
-        x = ocp.model.x
-        u = ocp.model.u
-        
 
-        x = ocp.model.x
-
-        #ocp.cost.W = np.array([[1.]])
-        constant = 50 #18.1336
-        #Pump_power = (295.1748  * mdot_c**2  - 187.6638 * mdot_c+ constant)/(450)
-        #Heating_power = Q_heat/model.Q_heat_scale 
-        #cost = cs.vertcat(Pump_power, Heating_power, T_bat)
-        
-        # Trivial PyTorch index 0
-        density_coolant = 1050
-        pump_displacement = 1/(2*np.pi)*40/(100**3) # D parameter in simulink
-        
-        l4c_y_expr_row_1 = l4c.L4CasADi(lambda u0: (295.1748  * (model.omega_scale*density_coolant*pump_displacement*u0)**2  - 187.6638 * (model.omega_scale*density_coolant*pump_displacement*u0)+ constant)/(450), name='y_expr_1')
-        ocp.model.cost_y_expr = cs.vertcat(l4c_y_expr_row_1(u[0]), u[1], x)
-        ocp.model.cost_y_expr_0 = cs.vertcat(l4c_y_expr_row_1(u[0]), u[1], x)
-        ocp.model.cost_y_expr_e = x
         
         #l4c_y_expr_row_1 = l4c.L4CasADi(lambda u1: u1, name='y_expr_2')
         #l4c_y_expr_row_1 = l4c.L4CasADi(lambda u1: (295.1748  * (density_coolant*pump_displacement*u1)**2  - 187.6638 * (density_coolant*pump_displacement*u1)+ constant)/(450), name='y_expr_3')
@@ -262,13 +246,13 @@ class MPC:
         # Define weight parameters
         # Q = np.diag([10, 0.1])
         # R = np.diag([1,1])
-        Q = np.array([1.0, 1.0, 0.01])
+        Q = np.array([100, 100, 0.0])
         Q = np.diag(Q)
         # ocp.cost.W = scipy.linalg.block_diag(Q,R)
         # ocp.cost.W_e = Q 
         ocp.cost.W_0 = Q
         ocp.cost.W = Q
-        ocp.cost.W_e = np.diag(np.array([0.01]))
+        ocp.cost.W_e = np.diag(np.array([0.0]))
 
         ocp.cost.yref_0 = np.zeros((ny, ))
         ocp.cost.yref = np.zeros((ny, ))
@@ -323,7 +307,29 @@ class MPC:
                 constraint.T_clout_max
             ]
         )
+        x = ocp.model.x
+        u = ocp.model.u
+        
 
+        x = ocp.model.x
+
+        #ocp.cost.W = np.array([[1.]])
+        constant = 50 #18.1336
+        #Pump_power = (295.1748  * mdot_c**2  - 187.6638 * mdot_c+ constant)/(450)
+        #Heating_power = Q_heat/model.Q_heat_scale 
+        #cost = cs.vertcat(Pump_power, Heating_power, T_bat)
+        
+        # Trivial PyTorch index 0
+        #density_coolant = 1050
+        #pump_displacement = 1/(2*np.pi)*40/(100**3) # D parameter in simulink
+        #Pump_power = (-0.21574 + 10.0501*omega_normalized**2 + 6.84987*omega_normalized**3)/170 # Casadi pump fit 3rd degree
+
+        #l4c_y_expr_row_1 = l4c.L4CasADi(lambda u0: (295.1748  * (model.omega_scale*density_coolant*pump_displacement*u0)**2  - 187.6638 * (model.omega_scale*density_coolant*pump_displacement*u0)+ constant)/(450), name='y_expr_1')
+        l4c_y_expr_row_1 = l4c.L4CasADi(lambda u0: (-0.21574 + 10.0501*u0**2 + 6.84987*u0**3)/(1000), name='y_expr_1')
+        
+        ocp.model.cost_y_expr = cs.vertcat(l4c_y_expr_row_1(u[0]), u[1], x)
+        ocp.model.cost_y_expr_0 = cs.vertcat(l4c_y_expr_row_1(u[0]), u[1], x)
+        ocp.model.cost_y_expr_e = x
         # Note: We do not have terminal nonlinear constraint
         # This is because the nonlinear constraint includes inputs
         # For terminal node we do not have inputs so we cannot use it 
@@ -367,28 +373,30 @@ class MPC:
         ocp.constraints.idxsh_0 = np.array(range(nsh)) # Slack on initial shooting for nonlinear constraint
         ocp.constraints.idxsh = np.array(range(nsh)) # Slack on nonlinear constraint
 
-        ocp.constraints.idxsbu = np.array(range(nsu)) # Slack on u
+        #ocp.constraints.idxsbu = np.array(range(nsu)) # Slack on u
 
         
         # Slack cost
-        ocp.cost.zl = 10000 * np.zeros((ns,))
-        ocp.cost.zu = 10000 * np.zeros((ns,))
-        ocp.cost.Zl = 10000 * np.ones((ns,))
-        ocp.cost.Zu = 10000 * np.ones((ns,))
-        #ocp.cost.Zl[1] = 1
-        ocp.cost.Zl[2] = 100
-        #ocp.cost.Zu[1] = 1
-        ocp.cost.Zu[2] = 100
+        ocp.cost.zl = 10000 * np.zeros((nsx+nsh,))
+        ocp.cost.zu = 10000 * np.zeros((nsx+nsh,))
+        ocp.cost.Zl = 10000 * np.ones((nsx+nsh,))
+        ocp.cost.Zu = 10000 * np.ones((nsx+nsh,))
+       
+        ocp.cost.zl[0] = 1000
+        ocp.cost.zu[0] = 1000
         
-        ocp.cost.zl_0 = 10000 * np.zeros((nsh+nsu,))
-        ocp.cost.zu_0 = 10000 * np.zeros((nsh+nsu,))
-        ocp.cost.Zl_0 = 10000* np.ones((nsh+nsu,))
-        ocp.cost.Zu_0 = 10000* np.ones((nsh+nsu,))
+        ocp.cost.Zl[0] = 1
+        ocp.cost.Zu[0] = 1
 
-        ocp.cost.zl_e = 1000 * np.zeros((nsx,))
-        ocp.cost.zu_e = 1000 * np.zeros((nsx,))
-        ocp.cost.Zl_e = 1000* np.ones((nsx,))
-        ocp.cost.Zu_e = 1000 * np.ones((nsx,))
+        ocp.cost.zl_0 = 10000 * np.zeros((nsh,))
+        ocp.cost.zu_0 = 10000 * np.zeros((nsh,))
+        ocp.cost.Zl_0 = 10000* np.ones((nsh,))
+        ocp.cost.Zu_0 = 10000* np.ones((nsh,))
+
+        ocp.cost.zl_e = 10000 * np.ones((nsx,))
+        ocp.cost.zu_e = 10000 * np.ones((nsx,))
+        ocp.cost.Zl_e = 1* np.ones((nsx,))
+        ocp.cost.Zu_e = 1 * np.ones((nsx,))
 
         # Solver options
         ocp.solver_options.qp_solver = "FULL_CONDENSING_HPIPM"
@@ -428,12 +436,12 @@ class Controller:
     def setup(self, T_bat_target, T_env):
         
         # Residual MLP: Lightweight
-        residual_mlp = MLP(input_dim = 4, output_dim=1, hidden_dim=16, num_layers=2) # the network
+        residual_mlp = MLP(input_dim = 3, output_dim=1, hidden_dim=32, num_layers=3) # the network
         
         #residual_mlp = MLP(input_dim = 2 + 2, output_dim=1, hidden_dim=16, num_layers=1) # the network
         for param in residual_mlp.parameters():
             param.requires_grad = False
-        residual_mlp.load_state_dict(torch.load("heating_pretrain_full_network.pth", weights_only=True))
+        residual_mlp.load_state_dict(torch.load("heating_pretrain_economic_network_3_input_savgol.pth", weights_only=True))
         self.residual_mlp = residual_mlp
         self.residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=1e-2, weight_decay=0.1) # lr = learning rate, the optimizer
         #self.residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-3) # lr = learning rate, the optimizer
@@ -459,8 +467,8 @@ class Controller:
         # SOC_ref = None # This is not actually tracked
         self.dt = self.t_horizon/self.N
         self.obs_buffer = []
-        self.batch_size = 40 #30
-        self.T_update = self.batch_size*self.dt
+        self.batch_size = 50 #30
+        self.T_update = 50 #self.batch_size*self.dt
         self.T_warm_start = 30
         self.current_iterate = 0
         self.xt_pred = np.array([CELSIUS_TO_KELVIN, 1])
@@ -517,23 +525,23 @@ class Controller:
                 # SOC_ref_history.append(SOC_ref)
             # Set terminal reference
             # y_ref_k = np.array([Tb_ref, SOC_ref, 0])
-            y_ref_k = np.array([0,0, T_bat_target])  
+            y_ref_k = np.array([0,0, 0])  
          
             self.solver.set(k, "yref", y_ref_k)
             # Potential for error
             # T_env must be in Kelvin
-            param_values = np.array([disturbances[int(self.dt*(self.current_iterate + k))].item(), self.nn_on]) 
-            #param_values = np.array([0, self.nn_on]) 
+            #param_values = np.array([disturbances[int(self.dt*(self.current_iterate + k))].item(), self.nn_on]) 
+            param_values = np.array([0, self.nn_on]) 
 
             self.solver.set(k, "p", param_values)
 
         # Set terminal reference
         # y_ref_terminal = np.array([Tb_ref, SOC_ref])
-        y_ref_terminal = np.array([T_bat_target]) # Terminal cost only on states so 2x1 instead of 4x1 above
+        y_ref_terminal = np.array([0]) # Terminal cost only on states so 2x1 instead of 4x1 above
         #print(y_ref_terminal)
         self.solver.set(self.N, "yref", y_ref_terminal)
-        #param_values = np.array([0, self.nn_on])
-        param_values = np.array([disturbances[int(self.dt*(self.current_iterate + self.N))].item(), self.nn_on])
+        param_values = np.array([0, self.nn_on])
+        #param_values = np.array([disturbances[int(self.dt*(self.current_iterate + self.N))].item(), self.nn_on])
 
         self.solver.set(self.N, "p", param_values)
 
@@ -573,7 +581,7 @@ class Controller:
         self.total_cost += self.solver.get_cost()
         # ut = solver.get(0, "u").item()
         ut = self.solver.get(0, "u")
-        #print("SOLVER solution", ut)
+        print("SOLVER solution", ut)
         shooting_node = 1
         slack_lower = self.solver.get(shooting_node, "sl")
         slack_upper = self.solver.get(shooting_node, "su")
@@ -602,6 +610,97 @@ class Controller:
         # Want to compare prediction at time step 0 with value at time step 1
         # So delay update of xt pred
        
+        # update every T_update = 60 
+        # T_warm_start = 30
+        if (self.dt*self.current_iterate) > self.T_warm_start and ((self.dt*self.current_iterate) % self.T_update) == 0 and len(self.obs_buffer) >= self.batch_size:
+            self.nn_on = 1
+            data = np.array(self.data[-self.batch_size:])
+            #data = data.reshape((-1,1))
+            obs = np.array(self.obs_buffer[-self.batch_size:])
+     
+            temperatures = obs[:,0].flatten()
+            temperatures = np.append(temperatures,T_bat_0) # since np.diff returns N-1 on N data need one more data point
+            dT_bat_model_data = obs[:,1].flatten()
+            
+            # Savitzky-Golay filter
+            polyorder = 3
+            window_length = 5
+
+            temperatures_filtered = savgol_filter(temperatures, window_length=window_length, polyorder=polyorder)
+            dT_bat_model_data_filtered = savgol_filter(dT_bat_model_data, window_length=window_length, polyorder=polyorder)
+
+            # Butterworth filter
+            #filter_order = 5
+            #fs = 2*np.pi*1/5
+            #w_critical = 0.05 # normalized frequency to nyquist frequency (half of sample rate)
+            # b, a
+            #numerator_coeffs, denominator_coeffs = signal.butter(filter_order, w_critical, fs=fs)
+            #temperatures_filtered = signal.filtfilt(numerator_coeffs, denominator_coeffs, temperatures)
+            #dT_bat_model_data_filtered = signal.filtfilt(numerator_coeffs, denominator_coeffs, dT_bat_model_data)
+ 
+            #dT_bat_euler_data = np.diff(temperatures_filtered)/self.dt
+            dT_bat_euler_data = np.diff(temperatures_filtered)/self.dt
+        
+            print("dT_bat_euler shape", dT_bat_euler_data.shape)
+            print("obs[:,1] shape", )
+
+            residuals = dT_bat_euler_data - dT_bat_model_data_filtered
+            residuals = residuals.reshape((-1,1))
+            
+            X_train, X_test, y_train, y_test = train_test_split(data, residuals, test_size=0.25)
+            y_target = y_train
+            X_batch = torch.tensor(X_train, dtype=torch.float32)            
+            y_target = torch.tensor(y_target, dtype=torch.float32)
+
+
+
+            
+            for p in self.residual_mlp.parameters(): p.requires_grad = True
+            for _ in range(200): #200 before
+                self.residual_optimizer.zero_grad() # optimizer object
+                prediction = self.residual_mlp(X_batch) # gives data to network to make a prediction
+                loss = self.residual_criterion(prediction, y_target)
+                #l1_norm = sum(torch.linalg.norm(p, 1) for p in self.residual_mlp.parameters())
+                #l2_norm = sum(p.pow(2).sum() for p in self.residual_mlp.parameters())
+                #regularization = 0.1
+                #loss += regularization * l1_norm
+                loss.backward() # calculates gradient
+                
+                self.residual_optimizer.step() # one optimization step to update parameters
+            for p in self.residual_mlp.parameters(): 
+                p.requires_grad = False
+                print(p)
+            #print("UPDATE MODEL AT", self.dt*self.current_iterate)
+            
+            self.l4c_residual.update(self.residual_mlp)
+
+            test_data = torch.tensor(X_test, dtype=torch.float32)
+            #y_true_test = y_test[:,0]
+            #y_true_test = y_true_test.reshape((-1,1))
+        
+            
+
+            #y_nominal_test = y_test[:,1]
+            #y_nominal_test = y_nominal_test.reshape((-1,1))
+            #y_target = obs[-self.batch_size:]
+            #y_target = y_target.reshape((-1,1))
+            
+            y_target_test = torch.tensor(y_test, dtype=torch.float32)
+            self.residual_mlp.eval()
+            with torch.no_grad():
+                outputs = self.residual_mlp(test_data)
+                target_predicted = np.array(outputs.squeeze().tolist())
+            mse = root_mean_squared_error(y_target_test, target_predicted)
+            len_test = len(y_test)
+            null_prediction = np.zeros((len_test,))
+            print("MSE", mse)
+            mse_null_hypothesis = root_mean_squared_error(y_target_test, null_prediction)
+            print("MSE null hypothesis", mse_null_hypothesis)
+            self.residual_mlp.train()
+
+            if mse >= mse_null_hypothesis:
+                self.nn_on = 0
+
         pred_error = 0
         pred_error_nn = 0
         T_bat_pred = 0
@@ -659,7 +758,7 @@ class Controller:
 
             T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(self.T_env - self.T_bat_last))
             #T_bat = 100*(0.5 - random.random()
-            self.data.append((T_bat, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale))
+            self.data.append((T_bat, current, Q_heat/self.Q_heat_scale))
             #self.data.append((T_bat, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale))
             
             self.residual_mlp.eval()
@@ -667,7 +766,8 @@ class Controller:
             #current = disturbances[int(self.dt*(self.current_iterate))].item()
             #residual_data = torch.tensor([T_bat_k_minus_1, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale], dtype=torch.float32)
             #residual_data = torch.tensor([Q_heat/self.Q_heat_scale], dtype=torch.float32)
-            residual_data = torch.tensor([T_bat, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale], dtype=torch.float32)
+            #residual_data = torch.tensor([T_bat, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale], dtype=torch.float32)
+            residual_data = torch.tensor([T_bat, current, Q_heat/self.Q_heat_scale], dtype=torch.float32)
             
             residual = self.residual_mlp(residual_data).numpy().item()
             T_bat_dot_nn = T_bat_dot_model + residual
@@ -679,108 +779,19 @@ class Controller:
             pred_error = T_bat_k - T_bat_pred  
             pred_error_dt = pred_error/self.dt
             #self.obs_buffer.append((pred_error_dt))
-            dynamics_residual = dT_bat_euler - T_bat_dot_model
-            self.obs_buffer.append((dynamics_residual))
+            #dynamics_residual = dT_bat_euler - T_bat_dot_model
+            self.obs_buffer.append((T_bat, T_bat_dot_model))
             self.residual_mlp.train()
 
         else:
             #self.obs_buffer.append((0, 0))
-            self.obs_buffer.append((0))
-            self.data.append((0,0,0,0))
+            self.obs_buffer.append((0,0))
+            self.data.append((0,0,0))
             #self.data = [(0,0,0,0)]
             T_bat_dot_model = dT_bat
             dT_bat_euler = dT_bat
             T_bat_dot_nn = dT_bat
 
-        # update every T_update = 60 
-        # T_warm_start = 30
-        if (self.dt*self.current_iterate) > self.T_warm_start and ((self.dt*self.current_iterate) % self.T_update) == 0 and len(self.obs_buffer) >= self.batch_size:
-            self.nn_on = 1
-            data = np.array(self.data[-self.batch_size:])
-            #data = data.reshape((-1,1))
-            obs = np.array(self.obs_buffer[-self.batch_size:])
-            print("data")
-            print(data)
-            print(data.shape)
-            print("obs")
-            print(obs)
-            print(obs.shape)
-            X_train, X_test, y_train, y_test = train_test_split(data, obs, test_size=0.25)
-
-            # data[:, :3] h1, h2 and u
-            #X_batch = torch.tensor(data[:, :], dtype=torch.float32)
-            X_batch = torch.tensor(X_train, dtype=torch.float32)
-            print(y_train)
-            print(y_train.shape)
-            # h1_dot, h2_dot
-            #y_true = y_train[:,0]
-            #y_nominal = y_train[:,1]
-            y_target = y_train
-            polyorder = 3
-            window_length = 10
-            y_target = savgol_filter(y_target, window_length=window_length, polyorder=polyorder)
-            y_train = y_train.reshape((-1,1))
-            
-            #y_true = y_true.reshape((-1,1))
-        
-            
-
-            #y_nominal = y_nominal.reshape((-1,1))
-            #y_target = obs[-self.batch_size:]
-            #y_target = y_target.reshape((-1,1))
-            
-            y_target = torch.tensor(y_target, dtype=torch.float32)
-            print(X_batch, y_target)
-            print(X_batch)
-            print(y_target)
-
-
-            
-            for p in self.residual_mlp.parameters(): p.requires_grad = True
-            for _ in range(200): #200 before
-                self.residual_optimizer.zero_grad() # optimizer object
-                prediction = self.residual_mlp(X_batch) # gives data to network to make a prediction
-                loss = self.residual_criterion(prediction, y_target)
-                #l1_norm = sum(torch.linalg.norm(p, 1) for p in self.residual_mlp.parameters())
-                #l2_norm = sum(p.pow(2).sum() for p in self.residual_mlp.parameters())
-                #regularization = 0.1
-                #loss += regularization * l1_norm
-                loss.backward() # calculates gradient
-                
-                self.residual_optimizer.step() # one optimization step to update parameters
-            for p in self.residual_mlp.parameters(): 
-                p.requires_grad = False
-                print(p)
-            #print("UPDATE MODEL AT", self.dt*self.current_iterate)
-            
-            self.l4c_residual.update(self.residual_mlp)
-
-            test_data = torch.tensor(X_test, dtype=torch.float32)
-            #y_true_test = y_test[:,0]
-            #y_true_test = y_true_test.reshape((-1,1))
-        
-            
-
-            #y_nominal_test = y_test[:,1]
-            #y_nominal_test = y_nominal_test.reshape((-1,1))
-            #y_target = obs[-self.batch_size:]
-            #y_target = y_target.reshape((-1,1))
-            
-            y_target_test = torch.tensor(y_test, dtype=torch.float32)
-            self.residual_mlp.eval()
-            with torch.no_grad():
-                outputs = self.residual_mlp(test_data)
-                target_predicted = np.array(outputs.squeeze().tolist())
-            mse = root_mean_squared_error(y_target_test, target_predicted)
-            len_test = len(y_test)
-            null_prediction = np.zeros((len_test,))
-            print("MSE", mse)
-            mse_null_hypothesis = root_mean_squared_error(y_target_test, null_prediction)
-            print("MSE null hypothesis", mse_null_hypothesis)
-            self.residual_mlp.train()
-
-            if mse >= mse_null_hypothesis:
-                self.nn_on = 0
         # Applying random noise for better excitation
         #s_omega = s_omega_norm*2*(random.random() - 0.5)
         #s_Q_heat = s_Q_heat_norm*2*(random.random() - 0.5)
@@ -799,8 +810,8 @@ class Controller:
         self.T_bat_last = T_bat_0 # Changed from xt[0], should be the same but for sanity
         self.omega_last = omega_value
         self.Q_heat_last = Q_heat_value
-        self.current_last = disturbances[int(self.dt*(self.current_iterate))].item()
-        #self.current_last = 0 # disturbances[int(self.dt*(self.current_iterate))].item()
+        #self.current_last = disturbances[int(self.dt*(self.current_iterate))].item()
+        self.current_last = 0 # disturbances[int(self.dt*(self.current_iterate))].item()
 
         #print(omega_value, Q_heat_value, self.xt_pred[0], T_bat_0, T_bat_target)
         #print("time", self.dt*self.current_iterate)

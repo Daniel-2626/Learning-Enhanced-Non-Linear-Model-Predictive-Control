@@ -55,8 +55,8 @@ def main():
     learning_rate = 1e-3
     input_dim = 3
     output_dim = 2
-    hidden_dim = 16
-    num_layers = 2
+    hidden_dim = 8
+    num_layers = 1
 
     model = MLP(input_dim=input_dim, output_dim=output_dim, hidden_dim=hidden_dim, num_layers=num_layers).to(device)
     residual_mlp = MLP(input_dim = input_dim, output_dim=output_dim, hidden_dim=hidden_dim, num_layers=num_layers) # the network

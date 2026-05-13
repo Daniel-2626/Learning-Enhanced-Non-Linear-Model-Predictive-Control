@@ -482,7 +482,6 @@ class Controller:
       
         casadi_model, constraint = model.model(T_env=T_env)
         self.T_bat_dot_function = casadi_model.T_bat_dot_function
-        # MIGHT CAUSE ISSUES SINCE DIFFERENT THAN YU MEI, here model=casadi_model
         self.solver = MPC(model=casadi_model, constraint=constraint, N=self.N, t_horizon = self.t_horizon).solver # Returns the solver object from MPC
 
         # SOC_ref = None # This is not actually tracked
@@ -864,9 +863,9 @@ class Controller:
                 omega_value, Q_heat_value = self.omega_scale*omega_max, self.Q_heat_scale*Q_heat_max
     
 
-        #if self.dt*self.current_iterate >= 1*2470:
-            #df = pd.DataFrame(data=self.residual_dictionary)
-            #df.to_csv("residuals.csv", index=False)
+        if self.dt*self.current_iterate >= 1*2470:
+            df = pd.DataFrame(data=self.residual_dictionary)
+            df.to_csv("residuals_mismatched.csv", index=False)
 
         elapsed = 1000*(time.time() - start)
         T_bat_target = T_bat_target * self.T_bat_scale

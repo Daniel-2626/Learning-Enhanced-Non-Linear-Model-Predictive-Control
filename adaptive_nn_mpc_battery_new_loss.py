@@ -122,7 +122,7 @@ class BatteryLearnedDynamics:
         # MLP network
         #mlp_input = cs.vertcat(T_bat, current, U)
         #mlp_input = cs.vertcat(T_bat, current, U)
-        mlp_input = cs.vertcat(T_bat_normalized, omega_normalized, Q_heat_normalized) #T_bat #T_bat #Q_heat_normalized
+        mlp_input = cs.vertcat(T_bat_normalized, current_normalized, omega_normalized, Q_heat_normalized) #T_bat #T_bat #Q_heat_normalized
         residual = self.residual_model(mlp_input.T).T 
 
         X_dot_residual = cs.vertcat(residual[0]) # x1 dot and x2 dot residual
@@ -268,7 +268,7 @@ class BatteryLearnedDynamics:
 
         st_next = X[:, 1]
         #mlp_input_K1 = cs.vertcat(st, disturbances[0], U[0], U[1]) #disturbances[0]  # cs.vertcat(st, disturbances[0], U)
-        mlp_input_K1 = cs.vertcat(st, U[0], U[1])
+        mlp_input_K1 = cs.vertcat(st, disturbances[0], U[0], U[1])
         K1 = (f_model(st, U, disturbances[0]) + self.lambda_nn* disturbances[1] * self.residual_model(mlp_input_K1.T).T[0])/(T_bat_scale)       
 
         st_next_RK4 = st + (step_horizon) * K1 #+ 2*K2 + 2*K3 + K4)
@@ -513,7 +513,7 @@ class MPC:
 class Controller:
     def setup(self, T_bat_target, T_env):
         learning_rate = 1e-2
-        input_dim = 3
+        input_dim = 4
         output_dim = 1
         hidden_dim = 8
         num_layers = 1
@@ -523,7 +523,7 @@ class Controller:
         #residual_mlp = MLP(input_dim = 2 + 2, output_dim=1, hidden_dim=16, num_layers=1) # the network
         for param in residual_mlp.parameters():
             param.requires_grad = False
-        residual_mlp.load_state_dict(torch.load("heating_pretrain_scaled_network_3_input_new_loss_filtered_tanh_jac_penalty.pth", weights_only=True))
+        residual_mlp.load_state_dict(torch.load("heating_pretrain_scaled_network_4_input_new_loss_filtered_tanh_jac_penalty_phys_penalty.pth", weights_only=True))
         self.residual_mlp = residual_mlp
         self.residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=learning_rate, weight_decay=0.1) # lr = learning rate, the optimizer
         #self.residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-3) # lr = learning rate, the optimizer
@@ -538,6 +538,7 @@ class Controller:
         self.t_horizon = self.N*5
         self.lambda_nn = 1
         self.lambda_jac = 1
+        self.lambda_phys = 0.1
 
         learned_model = BatteryLearnedDynamics(l4c_residual, lambda_nn=self.lambda_nn)
         casadi_model, constraint = learned_model.model(T_env=T_env)
@@ -551,8 +552,8 @@ class Controller:
         # SOC_ref = None # This is not actually tracked
         self.dt = self.t_horizon/self.N
         self.obs_buffer = []
-        self.batch_size = 200 #30
-        self.T_update = 500 #self.batch_size*self.dt
+        self.batch_size = 400 #30
+        self.T_update = self.batch_size*self.dt
         self.T_warm_start = 30
         self.current_iterate = 0
         self.xt_pred = np.array([CELSIUS_TO_KELVIN])
@@ -564,6 +565,7 @@ class Controller:
         self.T_bat_last = 0
         
         self.data = []
+        self.dynamics = []
         self.total_errors = 0
         self.total_cost = 0
         self.omega_scale = casadi_model.omega_scale
@@ -660,7 +662,7 @@ class Controller:
         # Now for the actual calculations 
         T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(T_env - T_bat))
         f_T_bat_dot = cs.Function("f_model", [T_bat_normalized,current_normalized, U], [T_bat_dot_model], ["x", "I_bat", "u"], ["ode"])
-        mlp_input = cs.vertcat(T_bat_normalized, U[0], U[1]) # T_bat
+        mlp_input = cs.vertcat(T_bat_normalized, disturbances[0], U[0], U[1]) # T_bat
         #mlp_input = cs.vertcat(T_bat, current, U)
 
         residual = self.l4c_residual(mlp_input.T).T 
@@ -819,12 +821,12 @@ class Controller:
             Q_cool = mdot_c*c_coolant*(T_clout - T_clin)
 
             T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(self.T_env - T_bat))
-
+            self.dynamics.append(T_bat_dot_model)
             self.data.append((T_bat/self.T_bat_scale, current/self.current_scale, omega/self.omega_scale, Q_heat/self.Q_heat_scale))
             
             
             self.residual_mlp.eval()
-            residual_data = torch.tensor([T_bat/self.T_bat_scale, omega/self.omega_scale, Q_heat/self.Q_heat_scale], dtype=torch.float32)
+            residual_data = torch.tensor([T_bat/self.T_bat_scale, current/self.current_scale, omega/self.omega_scale, Q_heat/self.Q_heat_scale], dtype=torch.float32)
             
             residual = self.residual_mlp(residual_data).numpy().item()
             T_bat_dot_nn = T_bat_dot_model + self.lambda_nn*residual/self.residual_scale
@@ -877,11 +879,43 @@ class Controller:
             Q_heat_scaled_filtered = savgol_filter(Q_heat_scaled_data, window_length=window_length, polyorder=polyorder)
             Q_heat_scaled_filtered = Q_heat_scaled_filtered.reshape((-1,1))
 
+
+            # Calculate confidence in nominal model
+            # Need to filter first, i.e. need to recalculate dynamics
+            dynamics_model = []
+            for k in range(self.batch_size):
+                omega_scaled = omega_scaled_filtered[k]
+                omega = self.omega_scale*omega_scaled
+                Q_heat_scaled = Q_heat_scaled_filtered[k]
+                Q_heat = self.Q_heat_scale*Q_heat_scaled
+                                    
+                current_scaled = current_filtered[k]            
+                current = self.current_scale*current_scaled
+                        
+                T_bat = self.T_bat_scale* temperatures_filtered[k]
+
+                mdot_c = density_coolant*pump_displacement*omega
+                # Dynamics               
+                # Get the cooler in and out temps
+                NTU_bat  = (alpha_3*hA_bat) / (mdot_c*c_coolant + 1e-3)
+                T_clin= (T_bat + alpha_1*(1/(1-np.exp(-NTU_bat)))*Q_heat/(mdot_c*c_coolant + 1e-3))
+                T_clout = ((T_clin - T_bat) * alpha_2*np.exp(-NTU_bat) + T_bat)
+                        
+                Q_cool = mdot_c*c_coolant*(T_clout - T_clin)
+
+                T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(T_env - T_bat))
+                dynamics_model.append(T_bat_dot_model)
+                    
+            dynamics_savgol = self.T_bat_scale*savgol_filter(temperatures_data, window_length=window_length, polyorder=polyorder, deriv = 1, delta = self.dt)
+            confidence = np.sqrt(np.power(dynamics_savgol-dynamics_model,2).mean())
+            self.residual_mlp.tau = confidence
+            print("confidence", confidence)
+            
             temperatures_tensor = torch.tensor(temperatures_filtered, dtype=torch.float32)
             current_tensor = torch.tensor(current_filtered,  dtype=torch.float32)
             omega_scaled_tensor = torch.tensor(omega_scaled_filtered, dtype=torch.float32)
             Q_heat_scaled_tensor = torch.tensor(Q_heat_scaled_filtered, dtype=torch.float32)
-            regularization = 0.1 # try without once
+            regularization = 0 # try without once
             #lambda_nn =0.1
             T_rollout = 10
             lambda_nn = self.lambda_nn # Larger than self.lambda_nn because want to speed up training
@@ -961,11 +995,14 @@ class Controller:
 
                         mlp_input = torch.cat([
                         (T_bat/self.T_bat_scale).reshape(1,1),
+                        (current/self.current_scale).reshape(1,1),
                         (omega/self.omega_scale).reshape(1,1),
                         (Q_heat/self.Q_heat_scale).reshape(1,1)
                         ], dim=1)
                         mlp_input.requires_grad_(True)
+
                         residual = self.residual_mlp(mlp_input)
+
                         jacobian = torch.autograd.grad(
                         outputs=residual,
                         inputs=mlp_input,
@@ -978,6 +1015,9 @@ class Controller:
                         # jacobian[0]
 
                         jacobian_penalty = jacobian.pow(2).mean()
+
+                        phys_penalty = F.relu((-Q_heat/Q_heat_scale).reshape(1,1)*residual) + F.relu((current/current_scale).reshape(1,1)*residual)
+
                         # sigma_max = torch.linalg.norm(jacobian, ord=2)
                         #jacobian_penalty = sigma_max**2 Spectral norm instead of frobenius
                         # also consider just doing on dJ/dx
@@ -986,6 +1026,8 @@ class Controller:
                     
                         loss +=  weight**i * (T_bat_next - T_bat_pred)**2 
                         loss += lambda_jac*jacobian_penalty
+                        loss += lambda_phys * phys_penalty
+
                         residual_loss = residual_loss + residual.pow(2).mean()
                         T_bat = T_bat_pred.squeeze()
 

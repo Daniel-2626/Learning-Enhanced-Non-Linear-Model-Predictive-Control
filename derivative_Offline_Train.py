@@ -223,7 +223,7 @@ def main():
         num_params += len(p.flatten())
         #print(p)
     print("num_params", num_params)
-    torch.save(residual_mlp.state_dict(), "heating_pretrain_deriv_network_4_input_tanh.pth")
+    #torch.save(residual_mlp.state_dict(), "heating_pretrain_deriv_network_4_input_tanh.pth")
 
     test_data = torch.tensor(X_test, dtype=torch.float32)
     residual_mlp.eval()

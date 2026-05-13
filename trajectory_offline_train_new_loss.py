@@ -72,7 +72,7 @@ def main():
 
     # Hyperparameters
     learning_rate = 1e-2
-    input_dim = 3
+    input_dim = 4
     output_dim = 1
     hidden_dim = 8
     num_layers = 1
@@ -86,7 +86,7 @@ def main():
     residual_mlp = residual_mlp
     residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=learning_rate, weight_decay=0.1) # lr = learning rate, the optimizer    
 
-    # Caluclate derivative with model
+    # Calculate derivative with model
     # Parameters
     m_battery = 20*2.5*4
     c_battery = 795
@@ -106,6 +106,35 @@ def main():
     T_env = (12.5 + CELSIUS_TO_KELVIN)
 
     n_rows = end_idx - start_idx
+    dynamics_model = []
+    for k in range(n_rows):
+        omega_scaled = omega_scaled_filtered[k]
+        omega = omega_scale*omega_scaled
+        Q_heat_scaled = Q_heat_scaled_filtered[k]
+        Q_heat = Q_heat_scale*Q_heat_scaled
+                            
+        current_scaled = current_filtered[k]            
+        current = current_scale*current_scaled
+                
+        T_bat = T_bat_scale* temperatures_filtered[k]
+
+        mdot_c = density_coolant*pump_displacement*omega
+        # Dynamics               
+        # Get the cooler in and out temps
+        NTU_bat  = (alpha_3*hA_bat) / (mdot_c*c_coolant + 1e-3)
+        T_clin= (T_bat + alpha_1*(1/(1-np.exp(-NTU_bat)))*Q_heat/(mdot_c*c_coolant + 1e-3))
+        T_clout = ((T_clin - T_bat) * alpha_2*np.exp(-NTU_bat) + T_bat)
+                 
+        Q_cool = mdot_c*c_coolant*(T_clout - T_clin)
+
+        T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(T_env - T_bat))
+        dynamics_model.append(T_bat_dot_model)
+    # The savgol derivative is assumed to be true dynamics
+    dynamics_savgol = T_bat_scale*savgol_filter(temperatures_data, window_length=window_length, polyorder=polyorder, deriv = 1, delta = dt)
+
+    confidence = np.sqrt(np.power(dynamics_savgol-dynamics_model,2).mean())
+    residual_mlp.tau = confidence
+    print("confidence", confidence)
     for p in residual_mlp.parameters(): p.requires_grad = True
 
     #temperatures_tensor = torch.tensor(temperatures_data, dtype=torch.float32)
@@ -121,7 +150,8 @@ def main():
     #lambda_nn =0.1
     T_rollout = 10
     lambda_nn = 1
-    lambda_jac = 1
+    lambda_phys = 0.1
+    lambda_jac = 0.1
     alpha = 1
     # TBPTT
     for epoch in range(200):
@@ -129,7 +159,7 @@ def main():
         loss = 0
         residual_loss = 0
         T_bat = T_bat_scale*temperatures_tensor[0]
-        weight = 1.01
+        weight = 1.02
         # We'll rollout for 10 steps and then update T
 
         for k0 in range(0,n_rows-1, T_rollout):
@@ -164,6 +194,7 @@ def main():
                 #mlp_input = torch.tensor([[T_bat/T_bat_scale, omega/omega_scale, Q_heat/Q_heat_scale]], dtype=torch.float32)                
                 mlp_input = torch.cat([
                     (T_bat/T_bat_scale).reshape(1,1),
+                    (current/current_scale).reshape(1,1),
                     (omega/omega_scale).reshape(1,1),
                     (Q_heat/Q_heat_scale).reshape(1,1)
                 ], dim=1)
@@ -181,6 +212,7 @@ def main():
                 # jacobian[0]
 
                 jacobian_penalty = jacobian.pow(2).mean()
+                phys_penalty = (F.relu((-Q_heat/Q_heat_scale).reshape(1,1)*residual))**2 + F.relu((current/current_scale).reshape(1,1)*residual)
                 # sigma_max = torch.linalg.norm(jacobian, ord=2)
                 #jacobian_penalty = sigma_max**2 Spectral norm instead of frobenius
                 # also consider just doing on dJ/dx
@@ -189,6 +221,7 @@ def main():
                
                 loss +=  weight**i * (T_bat_next - T_bat_pred)**2 
                 loss += lambda_jac*jacobian_penalty
+                loss += lambda_phys * phys_penalty
                 residual_loss = residual_loss + residual.pow(2).mean()
                 T_bat = T_bat_pred.squeeze()
             T_bat = T_bat.detach().clone()
@@ -196,7 +229,7 @@ def main():
         loss.backward() # calculates gradient
         nn.utils.clip_grad_norm_(
             residual_mlp.parameters(),
-            max_norm= 0.01
+            max_norm= 0.001
         ) # Try with a lower value
 
         #with torch.no_grad():
@@ -247,8 +280,12 @@ def main():
 
         #mlp_input = torch.tensor([[T_bat / T_bat_scale, current / current_scale, Q_heat / Q_heat_scale]],
         #                        dtype=torch.float32)
-        mlp_input = torch.tensor([[T_bat/T_bat_scale, omega/omega_scale, Q_heat/Q_heat_scale]],
+        #mlp_input = torch.tensor([[T_bat/T_bat_scale, omega/omega_scale, Q_heat/Q_heat_scale]],
+        #                       dtype=torch.float32)
+        mlp_input = torch.tensor([[T_bat/T_bat_scale, current/current_scale, omega/omega_scale, Q_heat/Q_heat_scale]],
                                 dtype=torch.float32)
+        
+        
         residual = residual_mlp(mlp_input).detach().item()
         residuals.append(residual)
         T_bat_pred_nn = T_bat + dt*(T_bat_dot_model + alpha*lambda_nn * residual)
@@ -283,7 +320,7 @@ def main():
 
     print("MSE Neural Network:", mse_nn)
     print("MSE Nominal Model:", mse_nom)
-    torch.save(residual_mlp.state_dict(), "heating_pretrain_scaled_network_3_input_new_loss_filtered_tanh_jac_penalty.pth")
+    torch.save(residual_mlp.state_dict(), "heating_pretrain_scaled_network_4_input_new_loss_filtered_tanh_jac_penalty_phys_penalty.pth")
 
     plt.figure(1)
     plt.plot(T_true, label='True')

@@ -2,6 +2,8 @@ import casadi as ca
 import numpy as np
 import matplotlib.pyplot as plt
 from time import time
+import pandas as pd
+
 # setting matrix weights
 Q_h_1 = 10
 Q_h_2 = 10
@@ -21,13 +23,13 @@ k = 1000
 grav = 9.82
 
 # Model
-nominal_ratio = 1.2
-A1_model = 1 * nominal_ratio
-a1_model = 0.1 #/ nominal_ratio
-A2_model = 1 * nominal_ratio
-a2_model = 0.1 #* nominal_ratio
-k_model = 1000#*nominal_ratio
-rho_model = 1000*nominal_ratio
+nominal_ratio = 0.7
+A1_model = 1 
+a1_model = 0.1 * nominal_ratio #/ nominal_ratio
+A2_model = 1 #* nominal_ratio
+a2_model = 0.1 * nominal_ratio#* nominal_ratio
+k_model = 1000 #*nominal_ratio
+rho_model = 1000# *nominal_ratio
 
 grav_model = 9.82
 
@@ -115,7 +117,11 @@ ode_model = ca.vertcat(x1_dot_model, x2_dot_model)
 
 f_model = ca.Function("f_model", [states,controls], [ode_model], ["x","u"], ["ode"])
 ## Actual model
-x1_dot = k*u_in/(rho*A1)**ca.exp(-u_in/10) - a1/A1 *ca.sqrt(2*grav*h_1+0.001) 
+#x1_dot = k*u_in/(rho*A1) - a1/A1 *ca.sqrt(2*grav*h_1+0.001) 
+
+x1_dot = k*u_in/(rho*A1)*ca.exp(-u_in/10) - a1/A1 *ca.sqrt(2*grav*h_1+0.001) 
+
+
 x2_dot = a1/A1 *ca.sqrt(2*grav*h_1+0.001) - a2/A2 *ca.sqrt(2*grav*h_2+0.001) #- 0.1*k*u_in/(rho*A2)
 ode = ca.vertcat(x1_dot, x2_dot)
 
@@ -197,6 +203,7 @@ cat_states = DM2Arr(X0)
 cat_controls = DM2Arr(u0[:,0])
 times = np.array([[0]])
 
+result_nominal = {'run': [], 'h1':[], 'h2': [], 'u': []}
 
 if __name__ == '__main__':
     main_loop = time()
@@ -222,7 +229,17 @@ if __name__ == '__main__':
             p = args['p']
         )
 
+        
         u = ca.reshape(sol['x'][n_states*(N+1):], n_controls, N   ) # gives u as a vector where rows are the different inputs and columns the time steps (applied input at col 0)
+        
+        result_nominal['run'].append(0)
+        print(X0.shape)
+        print(state_init.shape)
+        result_nominal['h1'].append(state_init[0,0])
+        result_nominal['h2'].append(state_init[1,0])
+        result_nominal['u'].append(u[:,0])
+
+        
         X0 = ca.reshape(sol['x'][:n_states*(N+1)], n_states, N+1)
         #print(X0)
         # if fewer than 3 states this can probably be changed to vstack or hstack
@@ -242,7 +259,7 @@ if __name__ == '__main__':
         ))
         # In code, this is the actual model update
         t0, state_init, u0 = shift_timestep(step_horizon, t0, state_init, u, f_actual)
-
+        #print(state_init)
         X0 = ca.horzcat(
             X0[:, 1:],
             ca.reshape(X0[:, -1], -1, 1)
@@ -258,6 +275,8 @@ if __name__ == '__main__':
 
         mpc_iter += 1
 
+
+
     main_loop_time = time()
     ss_error = ca.norm_2(state_init - state_target)
 
@@ -269,6 +288,9 @@ if __name__ == '__main__':
 h_1_num = cat_states[0, 0, :]
 h_2_num = cat_states[1, 0, :]
 u_in_num = cat_controls
+
+df = pd.DataFrame(data=result_nominal)
+df.to_csv("cascaded_nominal_mismatched.csv", index=False)
 print("input for steady state at reference:", a1*np.sqrt(2*grav*h_1_target))
 #u_in_num = cat_controls
 fig, (ax1, ax2) = plt.subplots(2,1,sharey=False)

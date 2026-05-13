@@ -21,7 +21,7 @@ torch.manual_seed(seed)
 class MLP(nn.Module):
     def __init__(self, input_dim=2, output_dim=1, hidden_dim=128, num_layers=3):
         super(MLP, self).__init__()
-        self.tau = 1
+        self.tau = 2
         layers = [nn.Linear(input_dim, hidden_dim), nn.Tanh()] # nn.ReLU rectified linear function (max(x,0))
         for _ in range(num_layers - 1):
             layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.Tanh()]) # nn.Linear applies an affine transform. hidden_dim features and hidden_dim out features
@@ -36,14 +36,14 @@ class CascadedTankLearnedDynamics:
         self.residual_model = residual_model # Residual model is L4Casadi residual
     
     def model(self):
-        nominal_ratio = 1.2
-        A1 = 1 * nominal_ratio
-        a1 = 0.1 #/ nominal_ratio
-        A2 = 1 * nominal_ratio
-        a2 = 0.1 #* nominal_ratio
+        nominal_ratio = 0.7
+        A1 = 1 #* nominal_ratio
+        a1 = 0.1 * nominal_ratio
+        A2 = 1 #* nominal_ratio
+        a2 = 0.1 * nominal_ratio #* nominal_ratio
         
         k = 1000#*nominal_ratio
-        rho = 1000*nominal_ratio
+        rho = 1000 #*nominal_ratio
         
         g = 9.82
         
@@ -197,7 +197,9 @@ h1 = cs.SX.sym('h1')
 h2 = cs.SX.sym('h2') 
 u = cs.SX.sym('u_in')
 ## Actual model
+#h1_dot = k*u/(rho*A1) - a1/A1 * cs.sqrt(2*g*h1+0.00001) #+ a2/A2 * cs.sqrt(2*g*h2 + 0.00001) 
 h1_dot = k*u/(rho*A1)*cs.exp(-u/10) - a1/A1 * cs.sqrt(2*g*h1+0.00001) #+ a2/A2 * cs.sqrt(2*g*h2 + 0.00001) 
+
 h2_dot = a1/A1 * cs.sqrt(2*g*h1 + 0.00001) - a2/A2 * cs.sqrt(2*g*h2 + 0.00001) #- 0.1*k*u/(rho*A2)
 ode = cs.vertcat(h1_dot, h2_dot)
 states = cs.vertcat(
@@ -214,13 +216,13 @@ def RK4(state, input_u, dt, f):
     next_state = state + (dt/6) * (K1 + 2*K2 + 2*K3 +K4)
     return next_state
 # Residual MLP: Lightweight
-residual_mlp = MLP(input_dim = 2 + 1, output_dim=2, hidden_dim=16, num_layers=2) # the network
+residual_mlp = MLP(input_dim = 2 + 1, output_dim=2, hidden_dim=8, num_layers=1) # the network
 residual_mlp.load_state_dict(torch.load("cascaded_tanks_pretrain.pth", weights_only=True))
 
 for param in residual_mlp.parameters():
     param.requires_grad = False
 l4c_residual = l4c.L4CasADi(residual_mlp, name="cascadedtank", mutable=True)
-residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-3) # lr = learning rate, the optimizer
+residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=1e-2, weight_decay=0.3) # lr = learning rate, the optimizer
 residual_criterion = nn.MSELoss()
 
 
@@ -253,7 +255,7 @@ T_update = 20 # int(t_horizon//(dt))
 nn_on = 0
 
 residual_dictionary = {'run': [], 'h1':[], 'h2': [], 'u': [], 'residual_1': [], 'residual_2': []}
-
+results_adaptive = {'run': [], 'h1':[], 'h2': [], 'u': []}
 
 def DM2Arr(dm):
     # returns a full matrix instead if a soarse ibe
@@ -287,6 +289,13 @@ for i in range(Steps):
     ut = solver.get(0, "u").item()
     u_history.append(ut)
 
+
+    results_adaptive['run'].append(0)
+    results_adaptive['h1'].append(xt[0])
+    results_adaptive['h2'].append(xt[1])
+    results_adaptive['u'].append(ut)
+
+
     # Simulate forwards
     next_obs = RK4(xt, ut, dt, f)
     xt = DM2Arr(next_obs).ravel()
@@ -303,13 +312,13 @@ for i in range(Steps):
     randn_1 = 0 #np.random.normal(mu,sigma)
     randn_2 = 0 #np.random.normal(mu, sigma)
     obs_buffer.append((xt[0], xt[1], ut, state_dynamics[0][0]+randn_1, state_dynamics[1][0]+randn_2))
+
+    residual_1 = state_dynamics[0][0] - nominal_func(xt[:2], ut)[0][0]
+    residual_2 = state_dynamics[1][0] - nominal_func(xt[:2], ut)[1][0]
     residual_dictionary['run'].append(0)
     residual_dictionary['h1'].append(xt[0])
     residual_dictionary['h2'].append(xt[1])
     residual_dictionary['u'].append(ut)
-    residual_1 = state_dynamics[0][0] - nominal_func(xt[:2], ut)[0][0]
-    residual_2 = state_dynamics[1][0] - nominal_func(xt[:2], ut)[1][0]
-
  
     residual_dictionary['residual_1'].append(residual_1)
     residual_dictionary['residual_2'].append(residual_2)
@@ -346,9 +355,9 @@ for i in range(Steps):
             residual_optimizer.zero_grad() # optimizer object
             prediction = residual_mlp(X_batch) # gives data to network to make a prediction
             loss = residual_criterion(prediction, y_target)
-            l2_norm = sum(p.pow(2).sum() for p in residual_mlp.parameters())
-            regularization = 0.1
-            loss += regularization * l2_norm
+            #l2_norm = sum(p.pow(2).sum() for p in residual_mlp.parameters())
+            #regularization = 0.1
+            #loss += regularization * l2_norm
             loss.backward() # calculates gradient
             residual_optimizer.step() # one optimization step to update parameters
         for p in residual_mlp.parameters(): p.requires_grad = False
@@ -375,6 +384,9 @@ ss_error = cs.norm_2(xt - state_target)
 print("final error", ss_error)
 df = pd.DataFrame(data=residual_dictionary)
 df.to_csv("cascaded_residuals.csv", index=False)
+
+df = pd.DataFrame(data=results_adaptive)
+df.to_csv("cascaded_adaptive_mismatched.csv", index=False)
 # Convert to numpy arrays for easier indexing
 h1_history = np.array(h1_history)
 h2_history = np.array(h2_history)

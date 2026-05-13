@@ -21,7 +21,7 @@ k = 1000
 grav = 9.82
 
 # Model
-nominal_ratio = 0.7
+nominal_ratio = 1.2
 A1_model = 1 * nominal_ratio
 a1_model = 0.1 #/ nominal_ratio
 A2_model = 1 * nominal_ratio
@@ -31,14 +31,14 @@ rho_model = 1000*nominal_ratio
 
 grav_model = 9.82
 
-sim_time = 200
+sim_time = 100
 
 
 h_1_max = 2
 h_2_max = 2
 # params
-h_1_init = 0.05
-h_2_init = 0.05
+h_1_init = 0.5
+h_2_init = 0.5
 h_1_target = 1
 h_2_target = 1
 
@@ -109,14 +109,14 @@ R = R # ca.diagcat(R1, R2, R3, R4)
 # discretization model (e.g. x2 = f(x1, v, t) = x1 + v*dt)
 ## Replace with cascaded tanks
 ## Controller model (mismatched)
-x1_dot_model = k_model*u_in/(rho_model*A1_model) - a1_model/A1_model *ca.sqrt(2*grav_model*h_1+0.001)
-x2_dot_model = a1_model/A1_model *ca.sqrt(2*grav_model*h_1+0.001) - a2_model/A2_model *ca.sqrt(2*grav_model*h_2+0.001)
+x1_dot_model = k_model*u_in/(rho_model*A1_model) - a1_model/A1_model *ca.sqrt(2*grav_model*h_1+0.001) 
+x2_dot_model = a1_model/A1_model *ca.sqrt(2*grav_model*h_1+0.001)  - a2_model/A2_model *ca.sqrt(2*grav*h_2+0.001) 
 ode_model = ca.vertcat(x1_dot_model, x2_dot_model)
 
 f_model = ca.Function("f_model", [states,controls], [ode_model], ["x","u"], ["ode"])
 ## Actual model
-x1_dot = k*u_in/(rho*A1) - a1/A1 *ca.sqrt(2*grav*h_1+0.001)
-x2_dot = a1/A1 *ca.sqrt(2*grav*h_1+0.001) - a2/A2 *ca.sqrt(2*grav*h_2+0.001)
+x1_dot = k*u_in/(rho*A1)**ca.exp(-u_in/10) - a1/A1 *ca.sqrt(2*grav*h_1+0.001) 
+x2_dot = a1/A1 *ca.sqrt(2*grav*h_1+0.001) - a2/A2 *ca.sqrt(2*grav*h_2+0.001) #- 0.1*k*u_in/(rho*A2)
 ode = ca.vertcat(x1_dot, x2_dot)
 
 f_actual = ca.Function("f_actual", [states,controls], [ode], ["x","u"], ["ode"])

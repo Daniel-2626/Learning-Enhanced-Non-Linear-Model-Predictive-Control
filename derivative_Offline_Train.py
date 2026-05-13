@@ -19,7 +19,7 @@ random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
 # Load dataset of residuals
-csv_path = os.path.join(os.path.dirname(__file__), 'residuals.csv')
+csv_path = os.path.join(os.path.dirname(__file__), 'residuals_nom.csv')
 df = pd.read_csv(csv_path)
 print(df.head())
 #training_data = df[['T_bat', 'current', 'omega_scaled', 'Q_heat_scaled']].to_numpy()
@@ -44,8 +44,8 @@ dt = 5
 
 start = 0
 end = -1
-polyorder = 3
-window_length = 5
+polyorder = 2
+window_length = 10
 
 omega_scale = 100
 Q_heat_scale = 1000
@@ -66,7 +66,7 @@ omega_scaled_filtered = savgol_filter(omega_scaled_data, window_length=window_le
 Q_heat_scaled_data = df[['Q_heat_scaled']].to_numpy().flatten()[start:end]
 Q_heat_scaled_filtered = savgol_filter(Q_heat_scaled_data, window_length=window_length, polyorder=polyorder)
 
-training_data = np.vstack([T_bat_scale*temperatures_filtered,current_scale*current_filtered,Q_heat_scaled_data])
+training_data = np.vstack([temperatures_filtered,current_filtered, omega_scaled_filtered,Q_heat_scaled_data])
 training_data = np.transpose(training_data)
 n_rows, n_columns = input_data.shape
 CELSIUS_TO_KELVIN = 273.15
@@ -160,6 +160,7 @@ X_train, X_test, y_train, y_test = train_test_split(training_data, residuals_fil
 
 class MLP(nn.Module):
     def __init__(self, input_dim=4, output_dim=2, hidden_dim=16, num_layers=2):
+        self.tau = 0.0014
         super().__init__()
         layers = [nn.Linear(input_dim, hidden_dim), nn.Tanh()]
         
@@ -168,7 +169,9 @@ class MLP(nn.Module):
         layers.append(nn.Linear(hidden_dim, output_dim))
         self.net = nn.Sequential(*layers)
     def forward(self, x):
-        return self.net(x)
+        net = self.net(x)
+        #return net 
+        return self.tau * torch.tanh(net)
 
 # MAML Training Loop
 
@@ -177,15 +180,14 @@ def main():
     
     # Hyperparameters
     learning_rate = 1e-2
-    input_dim = 3
+    input_dim = 4
     output_dim = 1
     hidden_dim = 16
-    num_layers = 3
+    num_layers = 2
 
     model = MLP(input_dim=input_dim, output_dim=output_dim, hidden_dim=hidden_dim, num_layers=num_layers).to(device)
     residual_mlp = MLP(input_dim = input_dim, output_dim=output_dim, hidden_dim=hidden_dim, num_layers=num_layers) # the network
     start = time.time()
-
     for param in residual_mlp.parameters():
         param.requires_grad = False
     residual_mlp = residual_mlp
@@ -207,6 +209,10 @@ def main():
         #regularization = 0.1
         #loss += regularization * l1_norm
         loss.backward() # calculates gradient
+        nn.utils.clip_grad_norm_(
+            residual_mlp.parameters(),
+            max_norm= 0.01
+        )
         residual_optimizer.step() # one optimization step to update parameters
     end = time.time()
     print("elapsed", 1000*(start-end))
@@ -217,7 +223,7 @@ def main():
         num_params += len(p.flatten())
         #print(p)
     print("num_params", num_params)
-    #torch.save(residual_mlp.state_dict(), "heating_pretrain_scaled_network_3_input_scaled_residual.pth")
+    torch.save(residual_mlp.state_dict(), "heating_pretrain_deriv_network_4_input_tanh.pth")
 
     test_data = torch.tensor(X_test, dtype=torch.float32)
     residual_mlp.eval()
@@ -230,6 +236,9 @@ def main():
     null_prediction = np.zeros((len_test,))
     print("MSE", mse)
     mse_null_hypothesis = mean_squared_error(y_test, null_prediction)
+
+    confidence = np.sqrt(np.power(y_train,2).mean())
+    print('confidence', confidence)
     print("MSE null hypothesis", mse_null_hypothesis)
     print("MSE/MSE null hypothesis", mse/mse_null_hypothesis)
     plt.figure(3)

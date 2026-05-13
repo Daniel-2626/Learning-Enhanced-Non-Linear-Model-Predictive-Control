@@ -21,6 +21,7 @@ torch.manual_seed(seed)
 class MLP(nn.Module):
     def __init__(self, input_dim=2, output_dim=1, hidden_dim=128, num_layers=3):
         super(MLP, self).__init__()
+        self.tau = 1
         layers = [nn.Linear(input_dim, hidden_dim), nn.Tanh()] # nn.ReLU rectified linear function (max(x,0))
         for _ in range(num_layers - 1):
             layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.Tanh()]) # nn.Linear applies an affine transform. hidden_dim features and hidden_dim out features
@@ -28,14 +29,14 @@ class MLP(nn.Module):
         self.net = nn.Sequential(*layers)
 
     def forward(self, x):
-        return self.net(x)
-
+        net =  self.net(x)
+        return self.tau* torch.tanh(net)
 class CascadedTankLearnedDynamics:
     def __init__(self, residual_model): # remove gym_env for cascaded tank
         self.residual_model = residual_model # Residual model is L4Casadi residual
     
     def model(self):
-        nominal_ratio = 0.7
+        nominal_ratio = 1.2
         A1 = 1 * nominal_ratio
         a1 = 0.1 #/ nominal_ratio
         A2 = 1 * nominal_ratio
@@ -59,7 +60,7 @@ class CascadedTankLearnedDynamics:
 
         # Dynamics
         
-        h1_dot =  k*u/(rho*A1) - a1/A1 * cs.sqrt(2*g*h1+0.00001) #+ leakage
+        h1_dot =  k*u/(rho*A1) - a1/A1 * cs.sqrt(2*g*h1+0.00001)  #+ leakage
         h2_dot = a1/A1 * cs.sqrt(2*g*h1 + 0.00001) - a2/A2 * cs.sqrt(2*g*h2 + 0.00001) 
         X_dot_nominal = cs.vertcat(h1_dot, h2_dot)
 
@@ -196,8 +197,8 @@ h1 = cs.SX.sym('h1')
 h2 = cs.SX.sym('h2') 
 u = cs.SX.sym('u_in')
 ## Actual model
-h1_dot = k*u/(rho*A1) - a1/A1 * cs.sqrt(2*g*h1+0.00001) 
-h2_dot = a1/A1 * cs.sqrt(2*g*h1 + 0.00001) - a2/A2 * cs.sqrt(2*g*h2 + 0.00001) 
+h1_dot = k*u/(rho*A1)*cs.exp(-u/10) - a1/A1 * cs.sqrt(2*g*h1+0.00001) #+ a2/A2 * cs.sqrt(2*g*h2 + 0.00001) 
+h2_dot = a1/A1 * cs.sqrt(2*g*h1 + 0.00001) - a2/A2 * cs.sqrt(2*g*h2 + 0.00001) #- 0.1*k*u/(rho*A2)
 ode = cs.vertcat(h1_dot, h2_dot)
 states = cs.vertcat(
     h1,
@@ -214,7 +215,7 @@ def RK4(state, input_u, dt, f):
     return next_state
 # Residual MLP: Lightweight
 residual_mlp = MLP(input_dim = 2 + 1, output_dim=2, hidden_dim=16, num_layers=2) # the network
-#residual_mlp.load_state_dict(torch.load("cascaded_tanks_pretrain.pth", weights_only=True))
+residual_mlp.load_state_dict(torch.load("cascaded_tanks_pretrain.pth", weights_only=True))
 
 for param in residual_mlp.parameters():
     param.requires_grad = False
@@ -238,8 +239,8 @@ solver = MPC(model=learned_model.model(), N=N, t_horizon = t_horizon,
 
 # Simulation setup 
 dt = t_horizon/N
-Tsim = 200
-xt = np.array([0.05,0.05])
+Tsim = 100
+xt = np.array([0.5,0.5])
 Steps = int(Tsim / dt)
 h1_history, u_history, h1_ref_history, h2_ref_history, h2_history, opt_times = [xt[0]], [], [], [], [xt[1]], []
 

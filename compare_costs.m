@@ -2,7 +2,7 @@
 N_reps = 3;
 
 %% Get data
-logged_data_traditional = load("Simulation_Data/traditional_new_scaling_mismatched_new_loss_filtering_alpha_train_often_tanh_4_input.mat");
+logged_data_traditional = load("Simulation_Data/traditional_new_scaling_matched_derivative_loss_tanh_4_input.mat");
 outputs_traditional = logged_data_traditional.data;
 
 time_traditional = getElement(outputs_traditional, "time").Values.Data;
@@ -14,7 +14,7 @@ heatingPwr_traditional = abs(getElement(outputs_traditional, "heatingPwr").Value
 T_bat_traditional = getElement(outputs_traditional, "Pack3").Values.Data;
 
 %% Get data
-logged_data_nn = load("Simulation_Data/adaptive_new_scaling_mismatched_new_loss_filtering_alpha_train_often_tanh_3_input.mat");
+logged_data_nn = load("Simulation_Data/adaptive_new_scaling_matched_derivative_loss_tanh_4_input.mat");
 outputs_nn = logged_data_nn.data;
 omega_nn = getElement(outputs_nn, "input_omega").Values.Data;
 Q_heat_nn = getElement(outputs_nn, "input_q_heat").Values.Data;

@@ -864,9 +864,9 @@ class Controller:
                 omega_value, Q_heat_value = self.omega_scale*omega_max, self.Q_heat_scale*Q_heat_max
     
 
-        if self.dt*self.current_iterate >= 1*2470:
-            df = pd.DataFrame(data=self.residual_dictionary)
-            df.to_csv("residuals.csv", index=False)
+        #if self.dt*self.current_iterate >= 1*2470:
+            #df = pd.DataFrame(data=self.residual_dictionary)
+            #df.to_csv("residuals.csv", index=False)
 
         elapsed = 1000*(time.time() - start)
         T_bat_target = T_bat_target * self.T_bat_scale
@@ -879,4 +879,5 @@ class Controller:
         print("--------------------------------")
         self.current_iterate += 1
         nn_on = 0
+        print(slack_x)
         return omega_value, Q_heat_value, T_bat_pred_nn, T_bat_pred, pred_error_nn, pred_error, self.omega_scale*omega_norm_ss, self.Q_heat_scale*Q_heat_norm_ss, cost_to_go, elapsed, T_bat_dot_model, T_bat_dot_nn, dT_bat_euler, nn_on, slack_x

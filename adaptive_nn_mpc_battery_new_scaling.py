@@ -26,6 +26,7 @@ CELSIUS_TO_KELVIN = 273.15
 class MLP(nn.Module):
     def __init__(self, input_dim=2, output_dim=1, hidden_dim=128, num_layers=3):
         super(MLP, self).__init__()
+        self.tau = 0.001
         layers = [nn.Linear(input_dim, hidden_dim, bias=True), nn.Tanh()] # nn.ReLU rectified linear function (max(x,0))
         for _ in range(num_layers - 1):
             layers.extend([nn.Linear(hidden_dim, hidden_dim, bias=True), nn.Tanh()]) # nn.Linear applies an affine transform. hidden_dim features and hidden_dim out features
@@ -39,7 +40,8 @@ class MLP(nn.Module):
         #self.net = nn.Sequential(*layers)
 
     def forward(self, x):
-        return self.net(x)
+        net = self.net(x)
+        return self.tau * torch.tanh(net) #self.net(x)
 class BatteryLearnedDynamics:
     def __init__(self, residual_model): # remove gym_env for cascaded tank
         self.residual_model = residual_model
@@ -123,7 +125,9 @@ class BatteryLearnedDynamics:
         # MLP network
         #mlp_input = cs.vertcat(T_bat, current, U)
         #mlp_input = cs.vertcat(T_bat, current, U)
-        mlp_input = cs.vertcat(T_bat_normalized, current_normalized, Q_heat_normalized) #T_bat #T_bat #Q_heat_normalized
+        mlp_input = cs.vertcat(T_bat_normalized, current_normalized, omega_normalized, Q_heat_normalized) #T_bat #T_bat #Q_heat_normalized
+        #mlp_input = cs.vertcat(T_bat_normalized, omega_normalized, Q_heat_normalized) #T_bat #T_bat #Q_heat_normalized
+        
         residual = self.residual_model(mlp_input.T).T 
 
         X_dot_residual = cs.vertcat(residual[0]) # x1 dot and x2 dot residual
@@ -268,7 +272,8 @@ class BatteryLearnedDynamics:
         T_clout_eval = T_clout_fun(st, U)
 
         st_next = X[:, 1]
-        mlp_input_K1 = cs.vertcat(st, disturbances[0], U[1]) #disturbances[0]  # cs.vertcat(st, disturbances[0], U)
+        mlp_input_K1 = cs.vertcat(st, disturbances[0], U[0], U[1]) #disturbances[0]  # cs.vertcat(st, disturbances[0], U)
+        #mlp_input_K1 = cs.vertcat(st, U[0], U[1])
         K1 = (f_model(st, U, disturbances[0]) + disturbances[1] * self.residual_model(mlp_input_K1.T).T[0])/(T_bat_scale)       
 
         st_next_RK4 = st + (step_horizon) * K1 #+ 2*K2 + 2*K3 + K4)
@@ -514,12 +519,12 @@ class Controller:
     def setup(self, T_bat_target, T_env):
         
         # Residual MLP: Lightweight
-        residual_mlp = MLP(input_dim = 3, output_dim=1, hidden_dim=16, num_layers=3) # the network
+        residual_mlp = MLP(input_dim = 4, output_dim=1, hidden_dim=16, num_layers=2) # the network
         
         #residual_mlp = MLP(input_dim = 2 + 2, output_dim=1, hidden_dim=16, num_layers=1) # the network
         for param in residual_mlp.parameters():
             param.requires_grad = False
-        residual_mlp.load_state_dict(torch.load("heating_pretrain_scaled_network_3_input_scaled_residual.pth", weights_only=True))
+        residual_mlp.load_state_dict(torch.load("heating_pretrain_deriv_network_4_input_tanh.pth", weights_only=True))
         self.residual_mlp = residual_mlp
         self.residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=1e-2, weight_decay=0.1) # lr = learning rate, the optimizer
         #self.residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-3) # lr = learning rate, the optimizer
@@ -530,7 +535,7 @@ class Controller:
         self.l4c_residual = l4c_residual
         print(l4c_residual)
         # MPC Setup 
-        self.N = 200 # 80
+        self.N = 200  # 80
         self.t_horizon = self.N*5
         learned_model = BatteryLearnedDynamics(l4c_residual)
       
@@ -546,7 +551,7 @@ class Controller:
         self.dt = self.t_horizon/self.N
         self.obs_buffer = []
         self.batch_size = 200 #30
-        self.T_update = 200 #self.batch_size*self.dt
+        self.T_update = self.batch_size*self.dt
         self.T_warm_start = 30
         self.current_iterate = 0
         self.xt_pred = np.array([CELSIUS_TO_KELVIN])
@@ -654,7 +659,9 @@ class Controller:
         # Now for the actual calculations 
         T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(T_env - T_bat))
         f_T_bat_dot = cs.Function("f_model", [T_bat_normalized,current_normalized, U], [T_bat_dot_model], ["x", "I_bat", "u"], ["ode"])
-        mlp_input = cs.vertcat(T_bat_normalized, current_normalized, U[1]) # T_bat
+        mlp_input = cs.vertcat(T_bat_normalized, current_normalized, U[0], U[1]) # T_bat
+        #mlp_input = cs.vertcat(T_bat_normalized, U[0], U[1]) # T_bat
+        
         #mlp_input = cs.vertcat(T_bat, current, U)
 
         residual = self.l4c_residual(mlp_input.T).T 
@@ -818,7 +825,8 @@ class Controller:
             
             
             self.residual_mlp.eval()
-            residual_data = torch.tensor([T_bat/self.T_bat_scale, current/self.current_scale, Q_heat/self.Q_heat_scale], dtype=torch.float32)
+            residual_data = torch.tensor([T_bat/self.T_bat_scale, current/self.current_scale, omega/self.omega_scale, Q_heat/self.Q_heat_scale], dtype=torch.float32)
+            #residual_data = torch.tensor([T_bat/self.T_bat_scale, omega/self.omega_scale, Q_heat/self.Q_heat_scale], dtype=torch.float32)
             
             residual = self.residual_mlp(residual_data).numpy().item()
             T_bat_dot_nn = T_bat_dot_model + residual/self.residual_scale
@@ -837,8 +845,8 @@ class Controller:
             self.nn_on = 1
             data = np.array(self.data[-self.batch_size:])
             n_rows, n_cols = data.shape
-            polyorder = 3
-            window_length = 5
+            polyorder = 2
+            window_length = 10
             temperatures_scaled_data = data[:,0].flatten()
             temperatures_scaled_filtered = savgol_filter(temperatures_scaled_data, window_length=window_length, polyorder=polyorder)
 
@@ -851,8 +859,12 @@ class Controller:
             Q_heat_scaled_data = data[:,3].flatten()
             Q_heat_scaled_filtered = savgol_filter(Q_heat_scaled_data, window_length=window_length, polyorder=polyorder)
 
-            training_data = np.vstack([temperatures_scaled_filtered,current_scaled_filtered,Q_heat_scaled_filtered])
+            #training_data = np.vstack([temperatures_scaled_filtered,current_scaled_filtered,Q_heat_scaled_filtered])
+            training_data = np.vstack([temperatures_scaled_filtered,current_scaled_filtered, omega_scaled_filtered,Q_heat_scaled_filtered])
+            
             training_data = np.transpose(training_data)
+            #print(training_data[:10, :])
+            #stop 
             n_rows, n_columns = data.shape
             CELSIUS_TO_KELVIN = 273.15
 
@@ -937,11 +949,12 @@ class Controller:
             print(X_batch, y_target)
             print(X_batch)
             print(y_target)
-
-
+            confidence = np.sqrt(np.power(y_train,2).mean())
+            self.residual_mlp.tau = confidence
+            print("confidence", confidence)
             
             for p in self.residual_mlp.parameters(): p.requires_grad = True
-            for _ in range(500): #200 before
+            for _ in range(200): #200 before
                 self.residual_optimizer.zero_grad() # optimizer object
                 prediction = self.residual_mlp(X_batch) # gives data to network to make a prediction
                 loss = self.residual_criterion(prediction, y_target)
@@ -950,7 +963,10 @@ class Controller:
                 #regularization = 0.1
                 #loss += regularization * l1_norm
                 loss.backward() # calculates gradient
-                
+                nn.utils.clip_grad_norm_(
+                    self.residual_mlp.parameters(),
+                    max_norm= 0.01
+                )
                 self.residual_optimizer.step() # one optimization step to update parameters
             for p in self.residual_mlp.parameters(): 
                 p.requires_grad = False

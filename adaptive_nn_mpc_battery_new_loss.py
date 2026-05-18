@@ -2,6 +2,8 @@ import casadi as cs
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F # a bunch of functions, e.g. convolution
+
 import l4casadi as l4c
 from acados_template import AcadosOcpSolver, AcadosOcp, AcadosModel
 import time
@@ -27,7 +29,7 @@ class MLP(nn.Module):
     def __init__(self, input_dim=4, output_dim=2, hidden_dim=16, num_layers=2):
         super().__init__()
         layers = [nn.Linear(input_dim, hidden_dim), nn.Tanh()]
-        self.tau = 0.001
+        self.tau = nn.Parameter(torch.tensor([0.001]), requires_grad=False)        
         for _ in range(num_layers - 1):
             layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.Tanh()])
         layers.append(nn.Linear(hidden_dim, output_dim))
@@ -64,7 +66,7 @@ class BatteryLearnedDynamics:
         current = model.current_scale*current_normalized
         nn_on = cs.MX.sym('nn_on') # Switch for when the NN is on
 
-        P = cs.vertcat(current_normalized, nn_on)
+        P = cs.vertcat(current_normalized, nn_on)            
                 
         U = cs.vertcat(omega_normalized, Q_heat_normalized)
         
@@ -151,7 +153,7 @@ class BatteryLearnedDynamics:
 
         # Works in normalized 
         Q = np.diag([10*T_bat_scale**2])
-        R = np.diag([0.1, 1])   
+        R = np.diag([1, 10])   
         T = np.diag([10000000,10000000])
 
 
@@ -225,12 +227,7 @@ class BatteryLearnedDynamics:
         alpha_2 = 0.919681 # 0.980682  
         alpha_3 = 1.47275 # 0.981036
         gamma = 7.38325 # 7.
-        # Arbitrary
-        #alpha_0 = 0.79 # 1.4 # arbitrary
-        #alpha_1 = 0.8 # 1 
-        #alpha_2 = 1 # 0.980682  
-        #alpha_3 = 0.3 # 0.981036
-        #gamma = 30 # 7.
+
 
         # column vector for storing disturbances 
         P = cs.SX.sym('P', n_disturbances)
@@ -269,7 +266,7 @@ class BatteryLearnedDynamics:
         st_next = X[:, 1]
         #mlp_input_K1 = cs.vertcat(st, disturbances[0], U[0], U[1]) #disturbances[0]  # cs.vertcat(st, disturbances[0], U)
         mlp_input_K1 = cs.vertcat(st, disturbances[0], U[0], U[1])
-        K1 = (f_model(st, U, disturbances[0]) + self.lambda_nn* disturbances[1] * self.residual_model(mlp_input_K1.T).T[0])/(T_bat_scale)       
+        K1 = f_model(st, U, disturbances[0]) #+ self.lambda_nn* disturbances[1] * self.residual_model(mlp_input_K1.T).T[0])/(T_bat_scale)       
 
         st_next_RK4 = st + (step_horizon) * K1 #+ 2*K2 + 2*K3 + K4)
 
@@ -411,7 +408,7 @@ class MPC:
 
         # Define weight parameters
         Q = np.diag([10*model.T_bat_scale**2])
-        R = np.diag([0.1, 1])
+        R = np.diag([1, 10])
         ocp.cost.W = scipy.linalg.block_diag(Q,R)
         ocp.cost.W_e = Q 
         ocp.cost.yref = np.zeros((ny, ))
@@ -515,15 +512,15 @@ class Controller:
         learning_rate = 1e-2
         input_dim = 4
         output_dim = 1
-        hidden_dim = 8
-        num_layers = 1
+        hidden_dim = 32
+        num_layers = 2
         # Residual MLP: Lightweight
         residual_mlp = MLP(input_dim = input_dim, output_dim=output_dim, hidden_dim=hidden_dim, num_layers=num_layers) # the network
         
         #residual_mlp = MLP(input_dim = 2 + 2, output_dim=1, hidden_dim=16, num_layers=1) # the network
         for param in residual_mlp.parameters():
             param.requires_grad = False
-        residual_mlp.load_state_dict(torch.load("heating_pretrain_scaled_network_4_input_new_loss_filtered_tanh_jac_penalty_phys_penalty.pth", weights_only=True))
+        residual_mlp.load_state_dict(torch.load("heating_pretrain_scaled_network_4_input_new_loss_filtered_tanh_jac_penalty_phys_penalty_FINAL_FINAL.pth", weights_only=True))
         self.residual_mlp = residual_mlp
         self.residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=learning_rate, weight_decay=0.1) # lr = learning rate, the optimizer
         #self.residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-3) # lr = learning rate, the optimizer
@@ -537,8 +534,9 @@ class Controller:
         self.N = 200 # 80
         self.t_horizon = self.N*5
         self.lambda_nn = 1
-        self.lambda_jac = 1
-        self.lambda_phys = 0.1
+        self.lambda_jac = 0.1
+        self.lambda_phys = 1 # tunred off in training
+        self.epsilon = 0.1
 
         learned_model = BatteryLearnedDynamics(l4c_residual, lambda_nn=self.lambda_nn)
         casadi_model, constraint = learned_model.model(T_env=T_env)
@@ -552,7 +550,7 @@ class Controller:
         # SOC_ref = None # This is not actually tracked
         self.dt = self.t_horizon/self.N
         self.obs_buffer = []
-        self.batch_size = 400 #30
+        self.batch_size = 200 #30
         self.T_update = self.batch_size*self.dt
         self.T_warm_start = 30
         self.current_iterate = 0
@@ -576,7 +574,9 @@ class Controller:
         self.T_env = T_env
         self.nn_on = 0
         # Reading disturbance info
-        df = pd.read_csv("current_intp1.csv", names=["current"])
+        #df = pd.read_csv("current_intp1.csv", names=["current"])
+
+        df = pd.read_csv("current_rms_5s.csv", names=["current"])
         arr = df.to_numpy(dtype=np.float32)
         self.disturbance_values = arr
 
@@ -587,8 +587,8 @@ class Controller:
         args = self.steady_state_args
         
         disturbances = self.disturbance_values
-        current_N = disturbances[int(self.dt*(self.current_iterate + self.N))].item()/self.current_scale
-
+        #current_N = disturbances[int(self.dt*(self.current_iterate + self.N))].item()/self.current_scale
+        current_N = disturbances[self.current_iterate + self.N].item()/self.current_scale
         #current_N = 0 
         args['p'] = cs.vertcat(
             current_N, self.nn_on
@@ -624,8 +624,8 @@ class Controller:
         disturbances = self.disturbance_values
 
         #current_N = 0 
-        current_N = disturbances[int(self.dt*(self.current_iterate + self.N ))].item()/self.current_scale
-
+        #current_N = disturbances[int(self.dt*(self.current_iterate + self.N ))].item()/self.current_scale
+        current_N = disturbances[self.current_iterate + self.N].item()/self.current_scale
         # Parameters
         m_battery = 20*2.5*4
         c_battery = 795
@@ -667,7 +667,7 @@ class Controller:
 
         residual = self.l4c_residual(mlp_input.T).T 
         T_bat_dot_residual = residual[0]
-        T_bat_dot = (T_bat_dot_model + self.lambda_nn * self.nn_on * T_bat_dot_residual)/self.T_bat_scale
+        T_bat_dot = T_bat_dot_model #+ self.lambda_nn * self.nn_on * T_bat_dot_residual)/self.T_bat_scale
         jac_T_bat = cs.jacobian(T_bat_dot_model, T_bat_normalized)
         jac_T_bat_fun = cs.Function("f_dT_bat", [T_bat_normalized,current_normalized, U], [jac_T_bat], ["x", "I_bat", "u"], ["f_dT_bat"])
 
@@ -681,7 +681,7 @@ class Controller:
         a = A
         b = B
         q = 10*self.T_bat_scale**2
-        r = np.diag([0.1,1])
+        r = np.diag([1,10])
         cost_to_go = scipy.linalg.solve_continuous_are(a = a, b = b, q = q, r = r).item()
         Q_e = np.diag([cost_to_go])
         return Q_e, cost_to_go
@@ -725,7 +725,10 @@ class Controller:
             self.solver.set(k, "yref", y_ref_k)
             # Potential for error
             # T_env must be in Kelvin
-            param_values = np.array([disturbances[int(self.dt*(self.current_iterate + k))].item()/self.current_scale, self.nn_on])
+            #param_values = np.array([disturbances[int(self.dt*(self.current_iterate + k))].item()/self.current_scale, self.nn_on])
+            param_values = np.array([disturbances[self.current_iterate + k].item()/self.current_scale, self.nn_on])
+            
+
             #param_values = np.array([0, self.nn_on]) 
 
             self.solver.set(k, "p", param_values)
@@ -736,7 +739,7 @@ class Controller:
         #print(y_ref_terminal)
         self.solver.set(self.N, "yref", y_ref_terminal)
         #param_values = np.array([0, self.nn_on])
-        param_values = np.array([disturbances[int(self.dt*(self.current_iterate + self.N))].item()/self.current_scale, self.nn_on])
+        param_values = np.array([disturbances[self.current_iterate + self.N].item()/self.current_scale, self.nn_on])
 
         self.solver.set(self.N, "p", param_values)
 
@@ -907,29 +910,39 @@ class Controller:
                 dynamics_model.append(T_bat_dot_model)
                     
             dynamics_savgol = self.T_bat_scale*savgol_filter(temperatures_data, window_length=window_length, polyorder=polyorder, deriv = 1, delta = self.dt)
-            confidence = np.sqrt(np.power(dynamics_savgol-dynamics_model,2).mean())
-            self.residual_mlp.tau = confidence
+            confidence = 0.001
+            #np.sqrt(np.power(dynamics_savgol-dynamics_model,2).mean())
+            #with torch.no_grad():
+            #    self.residual_mlp.tau.copy_(torch.tensor([confidence]))            
             print("confidence", confidence)
             
             temperatures_tensor = torch.tensor(temperatures_filtered, dtype=torch.float32)
             current_tensor = torch.tensor(current_filtered,  dtype=torch.float32)
-            omega_scaled_tensor = torch.tensor(omega_scaled_filtered, dtype=torch.float32)
-            Q_heat_scaled_tensor = torch.tensor(Q_heat_scaled_filtered, dtype=torch.float32)
+            omega_scaled_tensor = torch.tensor(omega_scaled_data, dtype=torch.float32)
+            Q_heat_scaled_tensor = torch.tensor(Q_heat_scaled_data, dtype=torch.float32)
             regularization = 0 # try without once
             #lambda_nn =0.1
-            T_rollout = 10
+            T_rollout = 20
             lambda_nn = self.lambda_nn # Larger than self.lambda_nn because want to speed up training
             lambda_jac = self.lambda_jac
+            lambda_phys = self.lambda_phys
+            epsilon = self.epsilon
+            noise_std = 0.005
+
             # TBPTT
             for epoch in range(200):
                 self.residual_optimizer.zero_grad() # optimizer object
                 loss = 0
+                traj_loss = 0
+                jacobian_loss = 0
                 residual_loss = 0
                 T_bat = self.T_bat_scale*temperatures_tensor[0]
-                weight = 1.01
+                weight = 1.02
                 # We'll rollout for 20 steps and then update T
 
                 for k0 in range(0,self.batch_size-1, T_rollout):
+                    T_bat =  self.T_bat_scale*temperatures_tensor[k0]
+                    
                     for i in range(T_rollout):
 
                         t = k0 + i
@@ -944,57 +957,35 @@ class Controller:
                         current = self.current_scale*current_scaled
                         
                         T_bat_next = self.T_bat_scale* temperatures_tensor[t+1]
+                        T_bat_noisy = T_bat + torch.randn_like(T_bat) * noise_std
 
                         mdot_c = density_coolant*pump_displacement*omega
                         # Dynamics
                                 
                         # Get the cooler in and out temps
                         NTU_bat  = (alpha_3*hA_bat) / (mdot_c*c_coolant + 1e-3)
-                        T_clin= (T_bat + alpha_1*(1/(1-np.exp(-NTU_bat)))*Q_heat/(mdot_c*c_coolant + 1e-3))
-                        T_clout = ((T_clin - T_bat) * alpha_2*np.exp(-NTU_bat) + T_bat)
+
+                        NTU_safe = torch.clamp(NTU_bat, min=1e-6, max=50) 
+
+                        denom = 1 - torch.exp(-NTU_safe)
+                        safe_denom = torch.clamp(denom, min=1e-6)
+
+                        T_clin= (T_bat_noisy + alpha_1*(1/(safe_denom))*Q_heat/(mdot_c*c_coolant + 1e-3))
+                        T_clout = ((T_clin - T_bat_noisy) * alpha_2*np.exp(-NTU_safe) + T_bat_noisy)
                             
                         Q_cool = mdot_c*c_coolant*(T_clout - T_clin)
 
-                        T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(T_env - T_bat))
-                        
+                        T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(T_env - T_bat_noisy))
+                        if torch.isnan(T_bat_dot_model).any():
+                            print(f"NaN in Physics! NTU: {NTU_bat.item()}, mdot: {mdot_c.item()}, T_bat: {T_bat_noisy.item()}")
+                            # Check the denominator specifically
+                            print(f"Denom check: {1 - torch.exp(-NTU_bat).item()}")
                         #mlp_input = torch.tensor([[T_bat/T_bat_scale, current/current_scale, Q_heat/Q_heat_scale]], dtype=torch.float32)                
                         #mlp_input = torch.tensor([[T_bat/T_bat_scale, omega/omega_scale, Q_heat/Q_heat_scale]], dtype=torch.float32)                
-                        """
-                        mlp_input = torch.cat([
-                            (T_bat/self.T_bat_scale).reshape(1,1),
-                            (current/self.current_scale).reshape(1,1),
-                            (omega/self.omega_scale).reshape(1,1),
-                            (Q_heat/self.Q_heat_scale).reshape(1,1)
-                        ], dim=1)
-                        mlp_input.requires_grad_(True)
-                        residual = self.residual_mlp(mlp_input)
-                        jacobian = torch.autograd.grad(
-                        outputs=residual,
-                        inputs=mlp_input,
-                        grad_outputs=torch.ones_like(residual),
-                        create_graph=True,
-                        retain_graph=True
-                        )[0]
-
-                        #print(jacobian)
-                        # jacobian[0]
-
-                        jacobian_penalty = jacobian.pow(2).mean()
-                        # sigma_max = torch.linalg.norm(jacobian, ord=2)
-                        #jacobian_penalty = sigma_max**2 Spectral norm instead of frobenius
-                        # also consider just doing on dJ/dx
-                        #mlp_input = torch.tensor([[T_bat/self.T_bat_scale, omega / self.omega_scale, Q_heat/self.Q_heat_scale]], dtype=torch.float32)                
-                        residual = self.residual_mlp(mlp_input)
-                        T_bat_pred = T_bat + dt*(T_bat_dot_model+ lambda_nn * residual)
-                    
-                        loss +=  weight**i * (T_bat_next - T_bat_pred)**2 
-                        loss += lambda_jac*jacobian_penalty
-                        residual_loss = residual_loss + residual.pow(2).mean()
-                        T_bat = T_bat_pred.squeeze()
-                        """
+       
 
                         mlp_input = torch.cat([
-                        (T_bat/self.T_bat_scale).reshape(1,1),
+                        (T_bat_noisy/self.T_bat_scale).reshape(1,1),
                         (current/self.current_scale).reshape(1,1),
                         (omega/self.omega_scale).reshape(1,1),
                         (Q_heat/self.Q_heat_scale).reshape(1,1)
@@ -1010,36 +1001,51 @@ class Controller:
                         create_graph=True,
                         retain_graph=True
                         )[0]
-
+                        jacobian_T = jacobian[:, 0]
                         #print(jacobian)
                         # jacobian[0]
 
-                        jacobian_penalty = jacobian.pow(2).mean()
+                        #print(jacobian)
+                        # jacobian[0]
+                        #print("T bat dot model", T_bat_dot_model)
+                        #jacobian_penalty = jacobian.pow(2).mean()
+                        #print("jacobian penalty", jacobian_penalty)
+                        jacobian_penalty = jacobian_T.pow(2).mean()
+                        #print("jacobian wrt T penalty", jacobian_penalty)
 
-                        phys_penalty = F.relu((-Q_heat/Q_heat_scale).reshape(1,1)*residual) + F.relu((current/current_scale).reshape(1,1)*residual)
+                        phys_penalty = 0
+                        #phys_penalty = F.relu((-Q_heat/self.Q_heat_scale).reshape(1,1)*residual) #+ F.relu((current/current_scale).reshape(1,1)*residual)
 
                         # sigma_max = torch.linalg.norm(jacobian, ord=2)
                         #jacobian_penalty = sigma_max**2 Spectral norm instead of frobenius
                         # also consider just doing on dJ/dx
 
-                        T_bat_pred = T_bat + dt*(T_bat_dot_model+ lambda_nn*residual)
-                    
-                        loss +=  weight**i * (T_bat_next - T_bat_pred)**2 
-                        loss += lambda_jac*jacobian_penalty
-                        loss += lambda_phys * phys_penalty
+                        T_bat_pred = T_bat_noisy + dt*(T_bat_dot_model+ lambda_nn*residual)
 
-                        residual_loss = residual_loss + residual.pow(2).mean()
+                        error = T_bat_next - T_bat_pred 
+                         
+                        traj_loss +=  weight**i * torch.where(torch.abs(error)< epsilon, torch.zeros_like(error), error**2) 
+                        #print("traj loss", traj_loss)
+
+                        jacobian_loss += lambda_jac*jacobian_penalty
+                        #loss += lambda_phys * phys_penalty
+
+                        residual_loss = residual_loss # + residual.pow(2).mean()
                         T_bat = T_bat_pred.squeeze()
 
                         
        
                  
                     T_bat = T_bat.detach().clone()
+                loss += traj_loss + jacobian_loss
                 loss += regularization * residual_loss/self.batch_size 
+                #print("traj loss", traj_loss)
+                #print("jacobian loss", jacobian_loss)
+        
                 loss.backward() 
                 nn.utils.clip_grad_norm_(
                     self.residual_mlp.parameters(),
-                    max_norm= 0.01
+                    max_norm= 0.1
                 )
 
             
@@ -1089,7 +1095,9 @@ class Controller:
         self.T_bat_last = T_bat_0 # Changed from xt[0], should be the same but for sanity
         self.omega_last = omega_value
         self.Q_heat_last = Q_heat_value
-        self.current_last = disturbances[int(self.dt*(self.current_iterate))].item()
+        #self.current_last = disturbances[int(self.dt*(self.current_iterate))].item()
+        self.current_last = disturbances[self.current_iterate].item()   
+
         #self.current_last = 0 
         T_bat_target = T_bat_target * self.T_bat_scale
 

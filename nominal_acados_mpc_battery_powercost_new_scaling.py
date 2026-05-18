@@ -192,6 +192,9 @@ class MPC:
         ocp.cost.cost_type_0 = 'NONLINEAR_LS'
         ocp.cost.cost_type = 'NONLINEAR_LS'
         ocp.cost.cost_type_e = 'NONLINEAR_LS'
+        ocp.model.cost_y_expr = model_ac.cost_y_expr
+        ocp.model.cost_y_expr_e = model_ac.cost_y_expr_e
+        ocp.model.cost_y_expr_0 = model_ac.cost_y_expr_0
         # # state 
         # ocp.cost.Vx = np.zeros((ny, nx)) # i feel like this should be nx,nx ||Vx x||^2 
         # for i in range(nx):
@@ -206,13 +209,13 @@ class MPC:
         # Define weight parameters
         # Q = np.diag([10, 0.1])
         # R = np.diag([1,1])
-        Q = np.array([100, 100, 0.0])
+        Q = np.array([15, 15, 0])
         Q = np.diag(Q)
         # ocp.cost.W = scipy.linalg.block_diag(Q,R)
         # ocp.cost.W_e = Q 
         ocp.cost.W_0 = Q
         ocp.cost.W = Q
-        ocp.cost.W_e = np.diag(np.array([0.0]))
+        ocp.cost.W_e = np.diag(np.array([0]))
 
         ocp.cost.yref_0 = np.zeros((ny, ))
         ocp.cost.yref = np.zeros((ny, ))
@@ -267,9 +270,7 @@ class MPC:
                 constraint.T_clout_max
             ]
         )
-        ocp.model.cost_y_expr = model_ac.cost_y_expr
-        ocp.model.cost_y_expr_e = model_ac.cost_y_expr_e
-        ocp.model.cost_y_expr_0 = model_ac.cost_y_expr_0
+
         # Note: We do not have terminal nonlinear constraint
         # This is because the nonlinear constraint includes inputs
         # For terminal node we do not have inputs so we cannot use it 
@@ -294,8 +295,8 @@ class MPC:
 
 
         # Add slack to states
-        slack_allowable_low = Tb_min - T_steady_low  # How far below steady-state is allowed 
-        slack_allowable_high = Tb_max - T_steady_high  # How far above steady-state is allowed 
+        #slack_allowable_low = Tb_min - T_steady_low  # How far below steady-state is allowed 
+        #slack_allowable_high = Tb_max - T_steady_high  # How far above steady-state is allowed 
         
         #ocp.constraints.lsbx = np.array([slack_allowable_low])   # Slack lower bound
         #ocp.constraints.usbx = np.array([slack_allowable_high])  # Slack upper bound
@@ -317,26 +318,26 @@ class MPC:
 
         
         # Slack cost
-        ocp.cost.zl = 10000 * np.zeros((nsx+nsh,))
-        ocp.cost.zu = 10000 * np.zeros((nsx+nsh,))
-        ocp.cost.Zl = 10000 * np.ones((nsx+nsh,))
-        ocp.cost.Zu = 10000 * np.ones((nsx+nsh,))
+        ocp.cost.zl = 1000 * np.zeros((nsx+nsh,))
+        ocp.cost.zu = 1000 * np.zeros((nsx+nsh,))
+        ocp.cost.Zl = 1000 * np.ones((nsx+nsh,))
+        ocp.cost.Zu = 1000 * np.ones((nsx+nsh,))
        
         ocp.cost.zl[0] = 1000
         ocp.cost.zu[0] = 1000
         
-        ocp.cost.Zl[0] = 1
-        ocp.cost.Zu[0] = 1
+        ocp.cost.Zl[0] = 100
+        ocp.cost.Zu[0] = 100
 
-        ocp.cost.zl_0 = 10000 * np.zeros((nsh,))
-        ocp.cost.zu_0 = 10000 * np.zeros((nsh,))
-        ocp.cost.Zl_0 = 10000* np.ones((nsh,))
-        ocp.cost.Zu_0 = 10000* np.ones((nsh,))
+        ocp.cost.zl_0 = 1000 * np.zeros((nsh,))
+        ocp.cost.zu_0 = 1000* np.zeros((nsh,))
+        ocp.cost.Zl_0 = 1000* np.ones((nsh,))
+        ocp.cost.Zu_0 = 1000* np.ones((nsh,))
 
-        ocp.cost.zl_e = 10000 * np.ones((nsx,))
-        ocp.cost.zu_e = 10000 * np.ones((nsx,))
-        ocp.cost.Zl_e = 1* np.ones((nsx,))
-        ocp.cost.Zu_e = 1* np.ones((nsx,))
+        ocp.cost.zl_e = 1000 * np.ones((nsx,))
+        ocp.cost.zu_e = 1000 * np.ones((nsx,))
+        ocp.cost.Zl_e = 100* np.ones((nsx,))
+        ocp.cost.Zu_e = 100* np.ones((nsx,))
 
         # Solver options
         ocp.solver_options.qp_solver = "FULL_CONDENSING_HPIPM"
@@ -399,13 +400,15 @@ class Controller:
         self.total_cost = 0
         self.omega_scale = casadi_model.omega_scale
         self.Q_heat_scale = casadi_model.Q_heat_scale
+        self.T_bat_scale = casadi_model.T_bat_scale
+        self.current_scale = casadi_model.current_scale        
         self.T_env = T_env
 
         #self.residual_dictionary = {'run': [], 'T_bat':[], 'current': [], 'omega_scaled':[], 'Q_heat_scaled':[], 'residual': []}
         self.residual_dictionary = {'run': [], 'T_bat':[], 'current': [], 'omega_scaled': [], 'Q_heat_scaled': [], 'Q_cool':[], 'residual': [], 'T_bat_dot_model': [], 'T_bat_dot_euler': []}
         
         # Reading disturbance info
-        df = pd.read_csv("current_intp1.csv", names=["current"])
+        df = pd.read_csv("current_rms_5s.csv", names=["current"])
         arr = df.to_numpy(dtype=np.float32)
         self.disturbance_values = arr
 
@@ -486,7 +489,7 @@ class Controller:
             input_warm_start = np.array([omega_warm_start, Q_heat_warm_start])
             self.solver.set(0, 'u', input_warm_start) # Weird but this is how acados does warm starts. Does not "force" inputs to be this
             #state_warm_start = np.array([T_bat_0, SOC_0])
-            state_warm_start = np.array([T_bat_0])
+            state_warm_start = np.array([T_bat_0/self.T_bat_scale])
             self.solver.set(0, 'x', state_warm_start)
         disturbances = self.disturbance_values
         T_env = self.T_env
@@ -496,19 +499,22 @@ class Controller:
         for k in range(self.N):
             # For stage cost: [T_bat_target, Power_target]
             # Power_target = 0 to minimize power consumption
-            y_ref_k = np.array([0,0, 0])  
+            y_ref_k = np.array([0,0, T_bat_target/self.T_bat_scale])  
             self.solver.set(k, "yref", y_ref_k)
             
             # Set disturbances (current)
-            param_values = disturbances[int(self.dt*(self.current_iterate + k))].item()
-            param_values = 0
-
+            #param_values = disturbances[self.current_iterate + k].item()/self.current_scale
+            param_values = disturbances[self.current_iterate + k].item()/self.current_scale
+            #param_values = 0
+            
             self.solver.set(k, "p", param_values)
 
-        y_ref_terminal = np.array([0]) #np.array([0])  
+        y_ref_terminal = np.array([T_bat_target/self.T_bat_scale]) #np.array([0])  
         self.solver.set(self.N, "yref", y_ref_terminal)
         #param_values = disturbances[int(self.dt*(self.current_iterate + self.N))].item()
-        param_values = 0
+        #param_values = 0
+        param_values = disturbances[self.current_iterate + self.N].item()/self.current_scale
+
         self.solver.set(self.N, "p", param_values)
 
         #Q_e = 10
@@ -516,7 +522,7 @@ class Controller:
 
         start = time.time()
         #xt = np.array([T_bat_0,SOC_0])
-        xt = np.array([T_bat_0])
+        xt = np.array([T_bat_0/self.T_bat_scale])
         
     
 
@@ -638,11 +644,13 @@ class Controller:
         self.x_last = xt
         self.omega_last = omega_value
         self.Q_heat_last = Q_heat_value
-        self.current_last = 0
+        #self.current_last = 0
         #self.current_last = disturbances[int(self.dt*(self.current_iterate))].item()
-        if self.dt*self.current_iterate >= 1*2470:
+        self.current_last = disturbances[self.current_iterate].item()   
+
+        if self.dt*self.current_iterate >= 3*2470:
             df = pd.DataFrame(data=self.residual_dictionary)
-            df.to_csv("residuals.csv", index=False)
+            df.to_csv("mismatched_residuals_thermal_management.csv", index=False)
         if self.current_iterate > 0:
             self.collect_data(T_bat_0, dT_bat)
   
@@ -657,7 +665,7 @@ class Controller:
 
         elapsed = 1000*(time.time() - start)
 
-        print(omega_value, Q_heat_value, self.xt_pred[0], T_bat_0, T_bat_target)
+        print(omega_value, Q_heat_value, self.T_bat_scale*self.xt_pred[0], T_bat_0, T_bat_target)
 
 
         print("cumulative cost", self.total_cost)

@@ -118,7 +118,6 @@ ode_model = ca.vertcat(x1_dot_model, x2_dot_model)
 f_model = ca.Function("f_model", [states,controls], [ode_model], ["x","u"], ["ode"])
 ## Actual model
 #x1_dot = k*u_in/(rho*A1) - a1/A1 *ca.sqrt(2*grav*h_1+0.001) 
-
 x1_dot = k*u_in/(rho*A1)*ca.exp(-u_in/10) - a1/A1 *ca.sqrt(2*grav*h_1+0.001) 
 
 

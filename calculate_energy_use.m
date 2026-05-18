@@ -1,23 +1,23 @@
 %% Simulator set-up
-N_reps = 5;
+N_reps = 3;
 
 %% Get data
-logged_data_traditional = load("Simulation_Data/thermal_management_energy_cooling_matched_sg_3_input.mat");
+logged_data_traditional = load("Economic_MPC_Simulation_Data/Nominal_Economic_Performance/economic_current_off_cooling.mat");
 outputs_traditional = logged_data_traditional.data;
 
 time_traditional = getElement(outputs_traditional, "time").Values.Data;
 omega_traditional = getElement(outputs_traditional, "input_omega").Values.Data;
 pump_power_traditional = getElement(outputs_traditional, "pump_power").Values.Data;
-heatingPwr_traditional = abs(getElement(outputs_traditional, "heatingPwr").Values.Data);
+heatingPwr_traditional = getElement(outputs_traditional, "heatingPwr").Values.Data;
 T_bat_traditional = getElement(outputs_traditional, "Pack3").Values.Data;
 
 %% Get data
-logged_data_nn = load("Simulation_Data/adaptive_thermal_management_energy_cooling_matched_sg_3_input.mat");
+logged_data_nn = load("Economic_MPC_Simulation_Data/Nominal_Economic_Performance/economic_current_on_cooling.mat");
 outputs_nn = logged_data_nn.data;
 omega_nn = getElement(outputs_nn, "input_omega").Values.Data;
 time_nn = getElement(outputs_nn, "time").Values.Data;
 pump_power_nn = getElement(outputs_nn, "pump_power").Values.Data;
-heatingPwr_nn = abs(getElement(outputs_nn, "heatingPwr").Values.Data);
+heatingPwr_nn = getElement(outputs_nn, "heatingPwr").Values.Data;
 T_bat_nn = getElement(outputs_nn, "Pack3").Values.Data;
 
 
@@ -46,6 +46,9 @@ energy_nn = heating_energy_nn + pump_energy_nn;
 
 %%
 figure(1)
+set(groot, 'defaultAxesTickLabelInterpreter', 'latex');
+set(groot, 'defaultTextInterpreter', 'latex');
+set(groot, 'defaultLegendInterpreter', 'latex');
 plot(t,T_bat_mpc_nn_interp, 'LineWidth',6)
 hold on
 plot(t,T_bat_traditional_interp, 'LineWidth',6)
@@ -55,11 +58,12 @@ yline(28, 'LineWidth',6, 'LineStyle','--')
 ytop = (28)*ones(1,N_reps*2474);
 ybottom = (12)*ones(1,N_reps*2474);
 patch([t, flip(t)], [ybottom, ytop], [0.5, 0.5, 0.5], 'EdgeColor', 'none', 'FaceAlpha', 0.3)
-axis([1, N_reps*2474, 20, 29])
-legend("NN+MPC", "MPC",'Location','northwest')
+axis([1, N_reps*2474, 26, 29])
+legend("Nominal, current on", "Nominal, current off","Upper limit", 'Location','northeast')
 xlabel("Time (s)")
-ylabel(['Temperature (C' char(176) ')'])
-fontsize(32, 'points')
+ylabel('Temperature ($^\circ$C)', 'Interpreter', 'latex')
+set(findall(gcf, '-property', 'FontSize'), 'FontSize', 28);
+set(findall(gcf, '-property', 'FontName'), 'FontName', 'Times New Roman');
 
 %% heating power
 figure(2)

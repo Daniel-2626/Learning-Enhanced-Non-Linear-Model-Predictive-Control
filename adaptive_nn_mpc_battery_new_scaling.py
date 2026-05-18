@@ -26,7 +26,7 @@ CELSIUS_TO_KELVIN = 273.15
 class MLP(nn.Module):
     def __init__(self, input_dim=2, output_dim=1, hidden_dim=128, num_layers=3):
         super(MLP, self).__init__()
-        self.tau = 0.001
+        self.tau = nn.Parameter(torch.tensor([0.001]), requires_grad=False)        
         layers = [nn.Linear(input_dim, hidden_dim, bias=True), nn.Tanh()] # nn.ReLU rectified linear function (max(x,0))
         for _ in range(num_layers - 1):
             layers.extend([nn.Linear(hidden_dim, hidden_dim, bias=True), nn.Tanh()]) # nn.Linear applies an affine transform. hidden_dim features and hidden_dim out features
@@ -156,7 +156,7 @@ class BatteryLearnedDynamics:
 
         # Works in normalized 
         Q = np.diag([10*T_bat_scale**2])
-        R = np.diag([0.1, 1])   
+        R = np.diag([1, 10])   
         T = np.diag([10000000,10000000])
 
 
@@ -181,7 +181,6 @@ class BatteryLearnedDynamics:
             T_bat_normalized,
         )
         n_states = states.numel() # Returns amount of elements
-
         # control symbolic variables
         omega_norm = cs.SX.sym('omega_norm')
         omega_scale = 100
@@ -274,7 +273,7 @@ class BatteryLearnedDynamics:
         st_next = X[:, 1]
         mlp_input_K1 = cs.vertcat(st, disturbances[0], U[0], U[1]) #disturbances[0]  # cs.vertcat(st, disturbances[0], U)
         #mlp_input_K1 = cs.vertcat(st, U[0], U[1])
-        K1 = (f_model(st, U, disturbances[0]) + disturbances[1] * self.residual_model(mlp_input_K1.T).T[0])/(T_bat_scale)       
+        K1 = (f_model(st, U, disturbances[0]))/T_bat_scale # + disturbances[1] * self.residual_model(mlp_input_K1.T).T[0])/(T_bat_scale)       
 
         st_next_RK4 = st + (step_horizon) * K1 #+ 2*K2 + 2*K3 + K4)
 
@@ -416,7 +415,7 @@ class MPC:
 
         # Define weight parameters
         Q = np.diag([10*model.T_bat_scale**2])
-        R = np.diag([0.1, 1])
+        R = np.diag([1, 10])
         ocp.cost.W = scipy.linalg.block_diag(Q,R)
         ocp.cost.W_e = Q 
         ocp.cost.yref = np.zeros((ny, ))
@@ -524,9 +523,9 @@ class Controller:
         #residual_mlp = MLP(input_dim = 2 + 2, output_dim=1, hidden_dim=16, num_layers=1) # the network
         for param in residual_mlp.parameters():
             param.requires_grad = False
-        residual_mlp.load_state_dict(torch.load("heating_pretrain_deriv_network_4_input_tanh.pth", weights_only=True))
+        residual_mlp.load_state_dict(torch.load("heating_pretrain_deriv_network_4_input_tanh_FINAL.pth", weights_only=True))
         self.residual_mlp = residual_mlp
-        self.residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=1e-2, weight_decay=0.1) # lr = learning rate, the optimizer
+        self.residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=1e-3, weight_decay=0.01) # lr = learning rate, the optimizer
         #self.residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=1e-3) # lr = learning rate, the optimizer
         #print(residual_mlp[0])
         self.residual_criterion = nn.MSELoss()
@@ -573,7 +572,8 @@ class Controller:
         self.T_env = T_env
         self.nn_on = 0
         # Reading disturbance info
-        df = pd.read_csv("current_intp1.csv", names=["current"])
+        df = pd.read_csv("current_rms_5s.csv", names=["current"])
+        
         arr = df.to_numpy(dtype=np.float32)
         self.disturbance_values = arr
 
@@ -584,8 +584,8 @@ class Controller:
         args = self.steady_state_args
         
         disturbances = self.disturbance_values
-        current_N = disturbances[int(self.dt*(self.current_iterate + self.N))].item()/self.current_scale
-
+        #current_N = disturbances[int(self.dt*(self.current_iterate + self.N))].item()/self.current_scale
+        current_N = disturbances[self.current_iterate + self.N].item()/self.current_scale
         #current_N = 0 
         args['p'] = cs.vertcat(
             current_N, self.nn_on
@@ -621,8 +621,8 @@ class Controller:
         disturbances = self.disturbance_values
 
         #current_N = 0 
-        current_N = disturbances[int(self.dt*(self.current_iterate + self.N ))].item()/self.current_scale
-
+        #current_N = disturbances[int(self.dt*(self.current_iterate + self.N ))].item()/self.current_scale
+        current_N = disturbances[self.current_iterate+self.N]/self.current_scale
         # Parameters
         m_battery = 20*2.5*4
         c_battery = 795
@@ -666,7 +666,8 @@ class Controller:
 
         residual = self.l4c_residual(mlp_input.T).T 
         T_bat_dot_residual = residual[0]
-        T_bat_dot = (T_bat_dot_model + self.nn_on * T_bat_dot_residual)/self.T_bat_scale
+        # T_bat_dot = (T_bat_dot_model + self.nn_on * T_bat_dot_residual)/self.T_bat_scale
+        T_bat_dot = T_bat_dot_model/self.T_bat_scale
         jac_T_bat = cs.jacobian(T_bat_dot_model, T_bat_normalized)
         jac_T_bat_fun = cs.Function("f_dT_bat", [T_bat_normalized,current_normalized, U], [jac_T_bat], ["x", "I_bat", "u"], ["f_dT_bat"])
 
@@ -680,7 +681,7 @@ class Controller:
         a = A
         b = B
         q = 10*self.T_bat_scale**2
-        r = np.diag([0.1,1])
+        r = np.diag([1,10])
         cost_to_go = scipy.linalg.solve_continuous_are(a = a, b = b, q = q, r = r).item()
         Q_e = np.diag([cost_to_go])
         return Q_e, cost_to_go
@@ -724,7 +725,9 @@ class Controller:
             self.solver.set(k, "yref", y_ref_k)
             # Potential for error
             # T_env must be in Kelvin
-            param_values = np.array([disturbances[int(self.dt*(self.current_iterate + k))].item()/self.current_scale, self.nn_on])
+            #param_values = np.array([disturbances[int(self.dt*(self.current_iterate + k))].item()/self.current_scale, self.nn_on])
+            param_values = np.array([disturbances[self.current_iterate + k].item()/self.current_scale, self.nn_on])
+
             #param_values = np.array([0, self.nn_on]) 
 
             self.solver.set(k, "p", param_values)
@@ -735,7 +738,8 @@ class Controller:
         #print(y_ref_terminal)
         self.solver.set(self.N, "yref", y_ref_terminal)
         #param_values = np.array([0, self.nn_on])
-        param_values = np.array([disturbances[int(self.dt*(self.current_iterate + self.N))].item()/self.current_scale, self.nn_on])
+        #param_values = np.array([disturbances[int(self.dt*(self.current_iterate + self.N))].item()/self.current_scale, self.nn_on])
+        param_values = np.array([disturbances[self.current_iterate + self.N].item()/self.current_scale, self.nn_on])
 
         self.solver.set(self.N, "p", param_values)
 
@@ -920,8 +924,14 @@ class Controller:
             
             residuals_filtered_before = dT_bat_savgol - dT_bat_model_filtered_before
             residuals_filtered_before = residuals_filtered_before.reshape((-1,1))
-            
-            X_train, X_test, y_train, y_test = train_test_split(training_data, residuals_filtered_before, test_size=0.25)
+            N_data_points = len(residuals_filtered_before)
+            train_size = 0.7
+            test_size = 1 - train_size
+            X_train = training_data[:int(N_data_points*train_size),:]
+            X_test = training_data[int(N_data_points*train_size):]
+            y_train = residuals_filtered_before[:int(N_data_points*train_size),:]
+            y_test = residuals_filtered_before[int(N_data_points*train_size):]
+            #X_train, X_test, y_train, y_test = train_test_split(training_data, residuals_filtered_before, test_size=0.25)
 
             # data[:, :3] h1, h2 and u
             #X_batch = torch.tensor(data[:, :], dtype=torch.float32)
@@ -949,8 +959,11 @@ class Controller:
             print(X_batch, y_target)
             print(X_batch)
             print(y_target)
-            confidence = np.sqrt(np.power(y_train,2).mean())
-            self.residual_mlp.tau = confidence
+            confidence = 0.001
+            #confidence = np.sqrt(np.power(residuals_filtered_before,2).mean())
+            #confidence = np.clip(confidence, 0.000001, 0.01)
+            with torch.no_grad():
+                self.residual_mlp.tau.copy_(torch.tensor([confidence]))            
             print("confidence", confidence)
             
             for p in self.residual_mlp.parameters(): p.requires_grad = True
@@ -1015,7 +1028,8 @@ class Controller:
         self.T_bat_last = T_bat_0 # Changed from xt[0], should be the same but for sanity
         self.omega_last = omega_value
         self.Q_heat_last = Q_heat_value
-        self.current_last = disturbances[int(self.dt*(self.current_iterate))].item()
+        self.current_last = disturbances[self.current_iterate].item()/self.current_scale
+
         #self.current_last = 0 
         T_bat_target = T_bat_target * self.T_bat_scale
 

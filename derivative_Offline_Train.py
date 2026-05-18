@@ -19,7 +19,7 @@ random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
 # Load dataset of residuals
-csv_path = os.path.join(os.path.dirname(__file__), 'residuals_nom.csv')
+csv_path = os.path.join(os.path.dirname(__file__), 'residuals_matched_heating.csv')
 df = pd.read_csv(csv_path)
 print(df.head())
 #training_data = df[['T_bat', 'current', 'omega_scaled', 'Q_heat_scaled']].to_numpy()
@@ -125,9 +125,7 @@ dT_bat_savgol = 100*savgol_filter(temperatures_data, window_length=window_length
 dT_bat_model = df[['T_bat_dot_model']].to_numpy().flatten()[start:end]
 print(dT_bat_model)
 
-print("TYPE SAVGOL", type(dT_bat_savgol))
 dT_bat_model_filtered_before = np.array(dT_bat_model_filtered_before)
-print("TYPE dT_BAT", type(dT_bat_model_filtered_before))
 residuals_filtered_before = dT_bat_savgol - dT_bat_model_filtered_before
 
 
@@ -156,12 +154,23 @@ residual_scale = 1
 residuals = residual_scale * residuals
 residuals = residuals.reshape((-1,1))
 residuals_filtered_before = residual_scale*residuals_filtered_before.reshape((-1,1))
-X_train, X_test, y_train, y_test = train_test_split(training_data, residuals_filtered_before, test_size=0.3)
+print("training data shape", training_data.shape)
+print("residuals shape", residuals_filtered_before.shape)
+N_data_points = len(residuals_filtered_before)
+train_size = 0.5
+test_size = 1 - train_size
+X_train = training_data[:int(N_data_points*train_size),:]
+X_test = training_data[int(N_data_points*train_size):]
+y_train = residuals_filtered_before[:int(N_data_points*train_size),:]
+y_test = residuals_filtered_before[int(N_data_points*train_size):]
+
+#X_train, X_test, y_train, y_test = train_test_split(training_data, residuals_filtered_before, test_size=0.3)
 
 class MLP(nn.Module):
     def __init__(self, input_dim=4, output_dim=2, hidden_dim=16, num_layers=2):
-        self.tau = 0.0014
         super().__init__()
+        self.tau = nn.Parameter(torch.tensor([0.001]), requires_grad=False)        
+
         layers = [nn.Linear(input_dim, hidden_dim), nn.Tanh()]
         
         for _ in range(num_layers - 1):
@@ -198,7 +207,12 @@ def main():
     print(y_train.shape)
     X_batch = torch.tensor(X_train, dtype=torch.float32)
     y_target = torch.tensor(y_train.copy(), dtype=torch.float32)
-    
+    confidence = np.sqrt(np.power(y_train,2).mean())
+    print('confidence', confidence)
+    #np.sqrt(np.power(dynamics_savgol-dynamics_model,2).mean())
+    with torch.no_grad():
+        residual_mlp.tau.copy_(torch.tensor([confidence]))            
+        print("confidence", confidence)
     for p in residual_mlp.parameters(): p.requires_grad = True
     for _ in range(200):
         residual_optimizer.zero_grad() # optimizer object
@@ -223,7 +237,7 @@ def main():
         num_params += len(p.flatten())
         #print(p)
     print("num_params", num_params)
-    #torch.save(residual_mlp.state_dict(), "heating_pretrain_deriv_network_4_input_tanh.pth")
+    torch.save(residual_mlp.state_dict(), "heating_pretrain_deriv_network_4_input_tanh_FINAL.pth")
 
     test_data = torch.tensor(X_test, dtype=torch.float32)
     residual_mlp.eval()
@@ -237,8 +251,7 @@ def main():
     print("MSE", mse)
     mse_null_hypothesis = mean_squared_error(y_test, null_prediction)
 
-    confidence = np.sqrt(np.power(y_train,2).mean())
-    print('confidence', confidence)
+
     print("MSE null hypothesis", mse_null_hypothesis)
     print("MSE/MSE null hypothesis", mse/mse_null_hypothesis)
     plt.figure(3)
@@ -268,73 +281,8 @@ def main():
     plt.show()
     #for var_name in residual_optimizer.state_dict():
     #    print(var_name, '\t', residual_optimizer.state_dict()[var_name])
-    """
-    for epoch in range(epochs):
-        meta_optimizer.zero_grad()
-        meta_loss = 0.0
-        n_tasks_used = 0
 
-        task_ids = np.random.choice(list(task_data.keys()), meta_batch_size, replace=False)
-
-        for tid in task_ids:
-            x, y = task_data[tid]
-
-            permutation = torch.randperm(x.size(0))
-            x, y = x[permutation], y[permutation]
-
-            x_support, y_support = x[:K].to(device), y[:K].to(device)
-            x_query, y_query = x[K:K+K].to(device), y[K:K+K].to(device)
-
-            adapted_params = {
-                name: param.clone() for name, param in model.named_parameters()
-                }
-            
-            for _ in range(inner_steps):
-                support_pred = functional_call(model, adapted_params, (x_support,)) # replacing parameters in model with provided ones
-                loss = F.mse_loss(support_pred, y_support)
-                grads = torch.autograd.grad(loss, adapted_params.values(), create_graph=True) 
-                adapted_params = {
-                    name: param - inner_lr * grad
-                    for (name, param), grad in zip(adapted_params.items(), grads)
-                }
-
-            query_pred = functional_call(model, adapted_params, (x_query, ))
-            task_loss = F.mse_loss(query_pred, y_query)
-            meta_loss += task_loss
-            n_tasks_used += 1
-        
-        if n_tasks_used == 0:
-            continue
-        
-        meta_loss = meta_loss / n_tasks_used
-        meta_loss.backward() # calcualtes gradient
-        meta_optimizer.step()
-        train_losses.append(meta_loss.item())
-
-        if epoch % 1000 == 0 or epoch == epochs - 1:
-            print("Epoch {0} Meta Loss: {1}".format(epoch+1, meta_loss.item())) 
-
-    # Save model
-    save_dir = os.path.dirname(__file__)
-    save_path = os.path.join(save_dir, "maml_cartpole_meta_init_{0}_{1}.pth".format(num_layers, hidden_dim))
-    torch.save({
-        'model_state_dict': model.state_dict(),
-        'input_dim': input_dim, 
-        'output_dim': output_dim,
-        'hidden_dim': hidden_dim,
-        'num_layers': num_layers,
-    }, save_path)
-
-    print("Model saved")
-
-    plt.plot(train_losses)
-    plt.xlabel("Epoch")
-    plt.ylabel("Meta Loss (MSE)")
-    plt.title("MAML Meta-Training Loss (CartPole Residuals)")
-    plt.grid(True)
-    plt.yscale("log")
-    plt.show()
-    """
+ 
 if __name__ == "__main__":
     main()
     

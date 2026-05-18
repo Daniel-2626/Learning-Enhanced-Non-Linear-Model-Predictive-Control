@@ -113,10 +113,13 @@ class BatteryDynamics:
         return model, constraint 
     def optimization_problem_steady_state(self, dt, T_env):
         T_bat_scale = 100
+        omega_scale = 100
+
+        Q_heat_scale = 1000
 
         # Works in normalized 
         Q = np.diag([10*T_bat_scale**2])
-        R = np.diag([0.1,1])   
+        R = np.diag([1,10])   
         
         #R = np.diag([1, 155000])   
         T = np.diag([10000000,10000000])
@@ -146,9 +149,7 @@ class BatteryDynamics:
 
         # control symbolic variables
         omega_norm = cs.SX.sym('omega_norm')
-        omega_scale = 100
         Q_heat_norm = cs.SX.sym('Q_heat_norm')
-        Q_heat_scale = 1000
         controls = cs.vertcat(
             omega_norm,
             Q_heat_norm
@@ -373,7 +374,7 @@ class MPC:
 
         # Define weight parameters
         Q = np.diag([10*model.T_bat_scale**2])
-        R = np.diag([0.1,1])
+        R = np.diag([1,10])
         #R = np.diag([1,155000])
         
         ocp.cost.W = scipy.linalg.block_diag(Q,R)
@@ -509,7 +510,9 @@ class Controller:
         self.residual_dictionary = {'run': [], 'T_bat':[], 'current': [], 'omega_scaled': [], 'Q_heat_scaled': [], 'Q_cool':[], 'residual': [], 'T_bat_dot_model': [], 'T_bat_dot_euler': [] }
         
         # Reading disturbance info
-        df = pd.read_csv("current_intp1.csv", names=["current"])
+        #df = pd.read_csv("current_intp1.csv", names=["current"])
+        df = pd.read_csv("current_rms_5s.csv", names=["current"])
+
         arr = df.to_numpy(dtype=np.float32)
         self.disturbance_values = arr
 
@@ -521,7 +524,8 @@ class Controller:
         
         disturbances = self.disturbance_values
         #current_N = 0 
-        current_N = disturbances[int(self.dt*(self.current_iterate + self.N))].item()/self.current_scale
+        #current_N = disturbances[int(self.dt*(self.current_iterate + self.N))].item()/self.current_scale
+        current_N = disturbances[self.current_iterate + self.N].item()/self.current_scale
 
         args['p'] = cs.vertcat(
             current_N,
@@ -601,7 +605,7 @@ class Controller:
         a = A
         b = B
         q = 10*self.T_bat_scale**2
-        r = np.diag([0.1,1])
+        r = np.diag([1,10])
         
         #r = np.diag([1,155000])
         cost_to_go = scipy.linalg.solve_continuous_are(a = a, b = b, q = q, r = r).item()
@@ -700,7 +704,8 @@ class Controller:
             # T_env must be in Kelvin
             
             #param_values = 0
-            param_values = disturbances[int(self.dt*(self.current_iterate + k))].item()/self.current_scale
+            #param_values = disturbances[int(self.dt*(self.current_iterate + k))].item()/self.current_scale
+            param_values = disturbances[self.current_iterate + k].item()/self.current_scale
             
             self.solver.set(k, "p", param_values)
 
@@ -710,7 +715,9 @@ class Controller:
         #print(y_ref_terminal)
         self.solver.set(self.N, "yref", y_ref_terminal)
         #param_values = 0
-        param_values = disturbances[int(self.dt*(self.current_iterate + self.N))].item()/self.current_scale
+        #param_values = disturbances[int(self.dt*(self.current_iterate + self.N))].item()/self.current_scale
+        param_values = disturbances[self.current_iterate + self.N].item()/self.current_scale
+
 
         self.solver.set(self.N, "p", param_values)
 
@@ -849,7 +856,8 @@ class Controller:
         self.x_last = xt
         self.omega_last = omega_value
         self.Q_heat_last = Q_heat_value
-        self.current_last = disturbances[int(self.dt*(self.current_iterate))].item()        
+        #self.current_last = disturbances[int(self.dt*(self.current_iterate))].item()     
+        self.current_last = disturbances[self.current_iterate].item()   
         #self.current_last = 0 
         if self.current_iterate > 0:
             self.collect_data(T_bat_0, dT_bat)
@@ -863,9 +871,9 @@ class Controller:
                 omega_value, Q_heat_value = self.omega_scale*omega_max, self.Q_heat_scale*Q_heat_max
     
 
-        if self.dt*self.current_iterate >= 1*2470:
+        if self.dt*self.current_iterate >= 3*2470:
             df = pd.DataFrame(data=self.residual_dictionary)
-            df.to_csv("residuals_mismatched.csv", index=False)
+            df.to_csv("residuals_matched_heating_T_env_5.csv", index=False)
 
         elapsed = 1000*(time.time() - start)
         T_bat_target = T_bat_target * self.T_bat_scale

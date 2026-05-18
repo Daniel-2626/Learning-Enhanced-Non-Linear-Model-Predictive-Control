@@ -250,8 +250,8 @@ h1_ref = 1
 h2_ref = 1
 # Residual Finetune
 obs_buffer = []
-batch_size = 20
-T_update = 20 # int(t_horizon//(dt))
+batch_size = 50
+T_update = 50 # int(t_horizon//(dt))
 nn_on = 0
 
 residual_dictionary = {'run': [], 'h1':[], 'h2': [], 'u': [], 'residual_1': [], 'residual_2': []}
@@ -323,7 +323,7 @@ for i in range(Steps):
     residual_dictionary['residual_1'].append(residual_1)
     residual_dictionary['residual_2'].append(residual_2)
     #print(obs_buffer)
-    print(i)
+ 
     # update every 50 time steps
     if i > 0 and (i % T_update) == 0 and len(obs_buffer) >= batch_size:
         nn_on = 1
@@ -386,7 +386,7 @@ df = pd.DataFrame(data=residual_dictionary)
 df.to_csv("cascaded_residuals.csv", index=False)
 
 df = pd.DataFrame(data=results_adaptive)
-df.to_csv("cascaded_adaptive_mismatched.csv", index=False)
+df.to_csv("cascaded_adaptive_mismatched_deriv.csv", index=False)
 # Convert to numpy arrays for easier indexing
 h1_history = np.array(h1_history)
 h2_history = np.array(h2_history)

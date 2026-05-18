@@ -19,5 +19,14 @@ plot(time_steps, current_intp1, 'LineWidth',2)
 hold on 
 plot(time, current, 'LineStyle','--', 'LineWidth',2)
 %% Saving
-current_intp1_repeated = repmat(current_intp1, 1,13)
+current_intp1_repeated = repmat(current_intp1, 1,10)
 writematrix(current_intp1_repeated', "current_intp1.csv")
+
+%% RMS
+current_5s_rms = sqrt(mean(reshape(current_intp1_repeated, 5, []).^2, 1));
+plot(current_5s_rms)
+hold on
+plot(current_intp1_repeated)
+
+%% Saving
+writematrix(current_5s_rms', "current_rms_5s.csv")

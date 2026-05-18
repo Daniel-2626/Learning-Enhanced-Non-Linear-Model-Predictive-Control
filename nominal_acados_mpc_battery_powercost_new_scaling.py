@@ -650,7 +650,7 @@ class Controller:
 
         if self.dt*self.current_iterate >= 3*2470:
             df = pd.DataFrame(data=self.residual_dictionary)
-            df.to_csv("mismatched_residuals_thermal_management.csv", index=False)
+            df.to_csv("matched_residuals_thermal_management_cooling.csv", index=False)
         if self.current_iterate > 0:
             self.collect_data(T_bat_0, dT_bat)
   

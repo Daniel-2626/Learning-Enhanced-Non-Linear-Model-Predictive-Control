@@ -19,7 +19,7 @@ random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
 # Load dataset of residuals
-csv_path = os.path.join(os.path.dirname(__file__), 'mismatched_residuals_thermal_management.csv')
+csv_path = os.path.join(os.path.dirname(__file__), 'matched_residuals_thermal_management.csv')
 df = pd.read_csv(csv_path)
 print(df.head())
 
@@ -207,10 +207,10 @@ def main():
     T_rollout = 20
     lambda_nn = 1
     lambda_phys = 1
-    lambda_jac = 0.01
+    lambda_jac = 0.1
     alpha = 1
-    epsilon = 0.1
-    noise_std = 0.01
+    epsilon = 0.2
+    noise_std = 0.001
     # TBPT
  
     for epoch in range(200):

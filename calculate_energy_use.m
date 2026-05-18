@@ -2,7 +2,7 @@
 N_reps = 3;
 
 %% Get data
-logged_data_traditional = load("Economic_MPC_Simulation_Data/Nominal_Economic_Performance/economic_current_off_cooling.mat");
+logged_data_traditional = load("Economic_MPC_Simulation_Data/economic_cooling_match.mat");
 outputs_traditional = logged_data_traditional.data;
 
 time_traditional = getElement(outputs_traditional, "time").Values.Data;
@@ -10,20 +10,21 @@ omega_traditional = getElement(outputs_traditional, "input_omega").Values.Data;
 pump_power_traditional = getElement(outputs_traditional, "pump_power").Values.Data;
 heatingPwr_traditional = getElement(outputs_traditional, "heatingPwr").Values.Data;
 T_bat_traditional = getElement(outputs_traditional, "Pack3").Values.Data;
-
+Q_heat_traditional = getElement(outputs_traditional, 'input_q_heat').Values.Data/1000;
 %% Get data
-logged_data_nn = load("Economic_MPC_Simulation_Data/Nominal_Economic_Performance/economic_current_on_cooling.mat");
+logged_data_nn = load("Economic_MPC_Simulation_Data/adaptive_cooling_match.mat");
 outputs_nn = logged_data_nn.data;
 omega_nn = getElement(outputs_nn, "input_omega").Values.Data;
 time_nn = getElement(outputs_nn, "time").Values.Data;
 pump_power_nn = getElement(outputs_nn, "pump_power").Values.Data;
 heatingPwr_nn = getElement(outputs_nn, "heatingPwr").Values.Data;
 T_bat_nn = getElement(outputs_nn, "Pack3").Values.Data;
-
+Q_heat_nn = getElement(outputs_nn, 'input_q_heat').Values.Data/1000;
 
 %% Interpolation
-dt = 1;
+dt = 5;
 t = 1:dt:N_reps*2474;
+[~, N] = size(t);
 pump_power_traditional_interp = interp1(time_traditional, pump_power_traditional, t);
 
 T_bat_traditional_interp = interp1(time_traditional, T_bat_traditional, t);
@@ -45,6 +46,7 @@ pump_energy_nn = hour_in_sec*sum(pump_power_nn_interp);
 energy_nn = heating_energy_nn + pump_energy_nn;
 
 %%
+nn_on = 1000;
 figure(1)
 set(groot, 'defaultAxesTickLabelInterpreter', 'latex');
 set(groot, 'defaultTextInterpreter', 'latex');
@@ -55,23 +57,55 @@ plot(t,T_bat_traditional_interp, 'LineWidth',6)
 yline(12, 'LineWidth',6, 'LineStyle','--')
 yline(20.5, '-', 'Set-point', 'LineWidth',6, 'LabelHorizontalAlignment','left')
 yline(28, 'LineWidth',6, 'LineStyle','--')
-ytop = (28)*ones(1,N_reps*2474);
-ybottom = (12)*ones(1,N_reps*2474);
+ytop = (28)*ones(1,N);
+ybottom = (12)*ones(1,N);
 patch([t, flip(t)], [ybottom, ytop], [0.5, 0.5, 0.5], 'EdgeColor', 'none', 'FaceAlpha', 0.3)
-axis([1, N_reps*2474, 26, 29])
-legend("Nominal, current on", "Nominal, current off","Upper limit", 'Location','northeast')
+axis([1, N_reps*2474, 25, 32])
+xl = xline(nn_on, '-',{'Neural network on'}, 'LineWidth',6, 'LabelVerticalAlignment', 'top', 'LabelHorizontalAlignment', 'left');
+
+legend("Adaptive economic", "Nominal economic","Upper limit", 'Location','northeast')
 xlabel("Time (s)")
 ylabel('Temperature ($^\circ$C)', 'Interpreter', 'latex')
 set(findall(gcf, '-property', 'FontSize'), 'FontSize', 28);
 set(findall(gcf, '-property', 'FontName'), 'FontName', 'Times New Roman');
 
-%% heating power
+%% Cost function
+Q_heat_power = 15;
+Q_ang_vel = 15;
+Z_linear = 1000/1000;
+Z_quadratic = 100/100;
+cmp_start = 200;
+T_bat_nn = T_bat_mpc_nn_interp(cmp_start:end);
+Q_nn = Q_heat_nn(cmp_start:end);
+pump_power_nn = pump_power_nn_interp(cmp_start:end);
+
+T_bat_nom = T_bat_traditional_interp(cmp_start:end);
+Q_nom = Q_heat_traditional(cmp_start:end);
+pump_power_nom = pump_power_traditional_interp(cmp_start:end);
+
+% Slack calculation for heating
+%slack_nn = abs(min(T_bat_nn-12,0));
+%slack_nom = abs(min(T_bat_nom - 12,0));
+slack_nn = max(T_bat_nn - 28, 0);
+slack_nom = max(T_bat_nom - 28,0);
+cost_nom = Q_nom' * Q_heat_power * Q_nom + pump_power_nom*Q_ang_vel*pump_power_nom' + ...
+    + slack_nom * Z_quadratic * slack_nom' + sum(Z_linear * slack_nom);
+cost_nn = Q_nn' * Q_heat_power * Q_nn + pump_power_nn*Q_ang_vel*pump_power_nn' + ...
+    + slack_nn * Z_quadratic * slack_nn' + sum(Z_linear * slack_nn);
+cost_nom
+cost_nn
 figure(2)
+plot(slack_nn)
+hold on
+plot(slack_nom)
+%% heating power
+figure(3)
 plot(heatingPwr_nn/1000, 'LineWidth',3)
-average_heatingPwr_nn = mean(heatingPwr_nn/1000)
+average_heatingPwr_nn = mean(heatingPwr_nn/1000);
+
 hold on
 plot(heatingPwr_traditional/1000, 'LineWidth',3)
-average_heatingPwr_traditional = mean(heatingPwr_traditional/1000)
+average_heatingPwr_traditional = mean(heatingPwr_traditional/1000);
 
 legend("NN+MPC", "MPC")
 xlabel("Time (s)")
@@ -80,14 +114,14 @@ fontsize(32, 'points')
 
 
 %% pump power
-figure(3)
+figure(4)
 
 plot(t,pump_power_nn_interp, 'LineWidth',3)
-average_pump_power_nn = mean(pump_power_nn_interp)
+average_pump_power_nn = mean(pump_power_nn_interp);
 
 hold on
 plot(t,pump_power_traditional_interp, 'LineWidth',3)
-average_pump_power_traditional = mean(pump_power_traditional_interp)
+average_pump_power_traditional = mean(pump_power_traditional_interp);
 
 legend("NN+MPC", "MPC")
 xlabel("Time (s)")
@@ -95,7 +129,7 @@ ylabel(['Power (kW)'])
 fontsize(32, 'points')
 
 %% pump power based on function
-figure(4)
+figure(5)
 pump_power_nn_function = Pump_Power(omega_nn);
 pump_power_traditional_function = Pump_Power(omega_traditional);
 

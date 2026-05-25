@@ -2,52 +2,30 @@
 N_reps = 3;
 CELSIUS_TO_KELVIN = 273.15
 %% Get data
-logged_data_traditional = load("Deriv_Simulation_Data/nominal_cooling_mismatch.mat");
-outputs_traditional = logged_data_traditional.data;
-
-time_traditional = getElement(outputs_traditional, "time").Values.Data;
-omega_traditional = getElement(outputs_traditional, "input_omega").Values.Data;
-Q_heat_traditional = getElement(outputs_traditional, "input_q_heat").Values.Data;
-
-pump_power_traditional = getElement(outputs_traditional, "pump_power").Values.Data;
-heatingPwr_traditional = abs(getElement(outputs_traditional, "heatingPwr").Values.Data);
-T_bat_traditional = getElement(outputs_traditional, "Pack3").Values.Data + CELSIUS_TO_KELVIN;
-
-%% Get data
-logged_data_nn = load("Deriv_Simulation_Data/adaptive_cooling_mismatch_fixed_nonlin.mat");
-outputs_nn = logged_data_nn.data;
-omega_nn = getElement(outputs_nn, "input_omega").Values.Data;
-Q_heat_nn = getElement(outputs_nn, "input_q_heat").Values.Data;
-
-time_nn = getElement(outputs_nn, "time").Values.Data;
-pump_power_nn = getElement(outputs_nn, "pump_power").Values.Data;
-heatingPwr_nn = abs(getElement(outputs_nn, "heatingPwr").Values.Data);
-T_bat_nn = getElement(outputs_nn, "Pack3").Values.Data + CELSIUS_TO_KELVIN;
-
-%% Interpolation
-dt = 5;
-t = 1:dt:N_reps*2474;
-T_bat_traditional_interp = interp1(time_traditional, T_bat_traditional, t);
-
-T_bat_nn_interp = interp1(time_nn, T_bat_nn, t);
-nn_on = 1000;
+data = readmatrix("nominal_sim.csv");
+T_true = data(:,1);
+T_true = [12.5+CELSIUS_TO_KELVIN; T_true];
+T_sim = data(:,2);
+T_sim = [12.5+CELSIUS_TO_KELVIN; T_sim];
+t = 1:5:1000;
 %%
 set(groot, 'defaultAxesTickLabelInterpreter', 'latex');
 set(groot, 'defaultTextInterpreter', 'latex');
 set(groot, 'defaultLegendInterpreter', 'latex');
-plot(t,T_bat_nn_interp-273.15, 'LineWidth',6)
+plot(t,T_true-CELSIUS_TO_KELVIN, 'LineStyle', '-', 'LineWidth',6)
 hold on
-plot(t,T_bat_traditional_interp-273.15,'LineWidth',6)
-yline(20.5, '--', 'LineWidth',6)
-xl = xline(nn_on, '-',{'Neural network on'}, 'LineWidth',6, 'LabelVerticalAlignment', 'middle', 'LabelHorizontalAlignment', 'left');
+plot(t, T_sim-CELSIUS_TO_KELVIN, 'LineStyle', '--', 'LineWidth',6)
 
-legend('Adaptive', 'Nominal', 'Target', 'Location','northeast')
+legend('True temperature', 'Nominal simulation', 'Location','southeast')
 xlabel("Time (s)")
 ylabel('Temperature ($^\circ$C)', 'Interpreter', 'latex')
-axis([1, N_reps*2475, 19.5, 26])
+axis([1, 1000, 10, 22])
 set(findall(gcf, '-property', 'FontSize'), 'FontSize', 28);
 set(findall(gcf, '-property', 'FontName'), 'FontName', 'Times New Roman');
 
+max(abs(T_true - T_sim))
+pred_errors = abs(T_true-T_sim);
+RMSE = sqrt(sum(pred_errors.^2)/200);
 %%
 % set(groot, 'defaultAxesTickLabelInterpreter', 'latex');
 % set(groot, 'defaultTextInterpreter', 'latex');

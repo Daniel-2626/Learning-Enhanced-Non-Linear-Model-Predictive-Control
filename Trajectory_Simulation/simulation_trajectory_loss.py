@@ -234,7 +234,7 @@ def main():
     dynamics_savgol = T_bat_scale*savgol_filter(temperatures_data, window_length=window_length, polyorder=polyorder, deriv = 1, delta = dt)
 
     #confidence = np.sqrt(np.power(dynamics_savgol-dynamics_model,2).mean())
-    confidence = 0.1
+    confidence = 0.001
     #confidence = np.clip(confidence, 0.001, 0.05)
     with torch.no_grad():
         residual_mlp.tau.copy_(torch.tensor([confidence]))
@@ -261,7 +261,7 @@ def main():
     noise_std = 0.005
     # TBPTT
  
-    for epoch in range(500):
+    for epoch in range(200):
         residual_optimizer.zero_grad() # optimizer object
         loss = 0
         residual_loss = 0
@@ -472,13 +472,13 @@ def main():
     plt.figure(2)
     plt.plot(residuals)
     plt.show()
-    torch.save(residual_mlp.state_dict(), "simulation_network.pth")
+    #torch.save(residual_mlp.state_dict(), "simulation_network.pth")
 
     plot_control_jacobians_wrt_q(residual_mlp, 293.15, 40, 100, 1000)
     #plot_control_jacobians_wrt_w(residual_mlp, 293.15, 40, 100, 1000)
     data = {"true": T_true, "nominal": T_preds_nom, "adaptive": T_preds_nn}
-    #sim_df = pd.DataFrame(data=data)
-    #sim_df.to_csv("simulation_results_mismatched.csv", index=False)
+    sim_df = pd.DataFrame(data=data)
+    sim_df.to_csv("simulation_results_less_confidence_mismatched.csv", index=False)
 
 if __name__ == "__main__":
     main()

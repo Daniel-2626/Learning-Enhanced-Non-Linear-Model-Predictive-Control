@@ -1,10 +1,11 @@
 
 simulation_results = readtable("simulation_results_mismatched.csv");
+simulation_results_less_confidence = readtable("simulation_results_less_confidence_mismatched.csv");
 
 T_true =simulation_results.true - 273.15;
 T_nominal = simulation_results.nominal-273.15;
 T_adaptive = simulation_results.adaptive-273.15;
-
+T_adaptive_less = simulation_results_less_confidence.adaptive - 273.15
 
 [rows, ~] = size(T_true);
 dt = 5;
@@ -24,6 +25,8 @@ plot(times, T_true, 'LineWidth',6)
 hold on
 plot(times, T_nominal, 'LineWidth',6)
 plot(times, T_adaptive,'LineWidth',6)
+plot(times, T_adaptive_less,'LineWidth',6)
+
 
 xlabel("Time (s)")
 ylabel('Temperature ($^\circ$C)', 'Interpreter', 'latex')
@@ -34,7 +37,7 @@ ylabel('Temperature ($^\circ$C)', 'Interpreter', 'latex')
 %xl.LabelVerticalAlignment = 'bottom';
 %xlim([20 80])
 %ylim([0.7 1.15])
-legend('True temperature', 'Nominal simulation', 'Adaptive simulation', 'Location','northwest')
+legend('True temperature', 'Nominal simulation', 'Adaptive simulation', 'Adaptive control', 'Location','northwest')
 %ylabel('Height Tank 1 (m)');
 %xlabel('Time (s)');
 set(findall(gcf, '-property', 'FontSize'), 'FontSize', 28);

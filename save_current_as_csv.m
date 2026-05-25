@@ -6,6 +6,17 @@ timeseries = getElement(FTP_75, "Current");
 current = timeseries.data;
 time = timeseries.Time;
 
+%%
+%%
+set(groot, 'defaultAxesTickLabelInterpreter', 'latex');
+set(groot, 'defaultTextInterpreter', 'latex');
+set(groot, 'defaultLegendInterpreter', 'latex');
+plot(time,current, 'LineWidth',2)
+xlabel("Time (s)")
+ylabel('Current (A)', 'Interpreter', 'latex')
+%axis([1, N_reps*2475, 19.5, 26])
+set(findall(gcf, '-property', 'FontSize'), 'FontSize', 28);
+set(findall(gcf, '-property', 'FontName'), 'FontName', 'Times New Roman');
 %% Interpolation
 time_steps = 1:1:2474;
 current_intp1 = interp1(time,current,time_steps);

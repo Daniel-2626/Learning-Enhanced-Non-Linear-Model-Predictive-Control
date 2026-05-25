@@ -2,7 +2,7 @@
 N_reps = 3;
 
 %% Get data
-logged_data_traditional = load("Economic_MPC_Simulation_Data/economic_cooling_match.mat");
+logged_data_traditional = load("Economic_MPC_Simulation_Data/economic_cooling_mismatch_fixed_nonlin.mat");
 outputs_traditional = logged_data_traditional.data;
 
 time_traditional = getElement(outputs_traditional, "time").Values.Data;
@@ -12,7 +12,7 @@ heatingPwr_traditional = getElement(outputs_traditional, "heatingPwr").Values.Da
 T_bat_traditional = getElement(outputs_traditional, "Pack3").Values.Data;
 Q_heat_traditional = getElement(outputs_traditional, 'input_q_heat').Values.Data/1000;
 %% Get data
-logged_data_nn = load("Economic_MPC_Simulation_Data/adaptive_cooling_match.mat");
+logged_data_nn = load("Economic_MPC_Simulation_Data/adaptive_cooling_mismatch_fixed_nonlin.mat");
 outputs_nn = logged_data_nn.data;
 omega_nn = getElement(outputs_nn, "input_omega").Values.Data;
 time_nn = getElement(outputs_nn, "time").Values.Data;
@@ -60,8 +60,8 @@ yline(28, 'LineWidth',6, 'LineStyle','--')
 ytop = (28)*ones(1,N);
 ybottom = (12)*ones(1,N);
 patch([t, flip(t)], [ybottom, ytop], [0.5, 0.5, 0.5], 'EdgeColor', 'none', 'FaceAlpha', 0.3)
-axis([1, N_reps*2474, 25, 32])
-xl = xline(nn_on, '-',{'Neural network on'}, 'LineWidth',6, 'LabelVerticalAlignment', 'top', 'LabelHorizontalAlignment', 'left');
+axis([1, N_reps*2474, 27, 36])
+xl = xline(nn_on, '-',{'Neural network on'}, 'LineWidth',6, 'LabelVerticalAlignment', 'middle', 'LabelHorizontalAlignment', 'left');
 
 legend("Adaptive economic", "Nominal economic","Upper limit", 'Location','northeast')
 xlabel("Time (s)")
@@ -72,8 +72,8 @@ set(findall(gcf, '-property', 'FontName'), 'FontName', 'Times New Roman');
 %% Cost function
 Q_heat_power = 15;
 Q_ang_vel = 15;
-Z_linear = 1000/1000;
-Z_quadratic = 100/100;
+Z_linear = 1000;
+Z_quadratic = 100;
 cmp_start = 200;
 T_bat_nn = T_bat_mpc_nn_interp(cmp_start:end);
 Q_nn = Q_heat_nn(cmp_start:end);
@@ -86,8 +86,8 @@ pump_power_nom = pump_power_traditional_interp(cmp_start:end);
 % Slack calculation for heating
 %slack_nn = abs(min(T_bat_nn-12,0));
 %slack_nom = abs(min(T_bat_nom - 12,0));
-slack_nn = max(T_bat_nn - 28, 0);
-slack_nom = max(T_bat_nom - 28,0);
+slack_nn = max(T_bat_nn - 28, 0)/100;
+slack_nom = max(T_bat_nom - 28,0)/100;
 cost_nom = Q_nom' * Q_heat_power * Q_nom + pump_power_nom*Q_ang_vel*pump_power_nom' + ...
     + slack_nom * Z_quadratic * slack_nom' + sum(Z_linear * slack_nom);
 cost_nn = Q_nn' * Q_heat_power * Q_nn + pump_power_nn*Q_ang_vel*pump_power_nn' + ...

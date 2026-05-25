@@ -19,7 +19,7 @@ random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
 # Load dataset of residuals
-csv_path = os.path.join(os.path.dirname(__file__), 'residuals_matched_heating_T_env_5.csv')
+csv_path = os.path.join(os.path.dirname(__file__), 'residuals_matched_heating.csv')
 df = pd.read_csv(csv_path)
 print(df.head())
 
@@ -399,7 +399,10 @@ def main():
         T_preds_nom.append(T_bat_pred)
         T_bat = T_bat_pred  
 
-    T_true = T_bat_scale*temperatures_data[1:]  
+    T_true = T_bat_scale*temperatures_data[:]  
+    T_preds_nom = np.insert(T_preds_nom, 0, T_bat_scale*temperatures_data[0])
+    T_preds_nn = np.insert(T_preds_nn, 0, T_bat_scale*temperatures_data[0])
+
     mse_nn = mean_squared_error(T_preds_nn, T_true)
     mse_nom = mean_squared_error(T_preds_nom, T_true)
 
@@ -419,7 +422,11 @@ def main():
     plt.plot(residuals)
     plt.show()
 
-    plot_control_jacobians(residual_mlp, 293.15, 40, 100, 1000)
+    #plot_control_jacobians(residual_mlp, 293.15, 40, 100, 1000)
+    data = {"True": T_true, "Nominal": T_preds_nom}
+    df_simul = pd.DataFrame(data)
+    df_simul.to_csv("nominal_sim.csv", index=False)
+
 
 if __name__ == "__main__":
     main()

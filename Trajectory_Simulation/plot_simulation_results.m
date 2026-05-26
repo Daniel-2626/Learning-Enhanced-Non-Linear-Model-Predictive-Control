@@ -39,7 +39,7 @@ ylabel('Temperature ($^\circ$C)', 'Interpreter', 'latex')
 %xl.LabelVerticalAlignment = 'bottom';
 %xlim([20 80])
 %ylim([0.7 1.15])
-legend('True temperature', 'Nominal simulation', 'Location','northwest')
+legend('True temperature', 'Nominal simulation', 'Location','southeast')
 %ylabel('Height Tank 1 (m)');
 %xlabel('Time (s)');
 set(findall(gcf, '-property', 'FontSize'), 'FontSize', 28);

@@ -369,8 +369,8 @@ def main():
 
     polyorder = 2
     window_length = 10
-    start_idx = 200
-    end_idx = 400
+    start_idx = 0
+    end_idx = 200
     #input_data = df[['T_bat', 'current', 'omega_scaled', 'Q_heat_scaled']].to_numpy()[start_idx:end_idx]
     temperatures_data = df[['T_bat']].to_numpy().flatten()[start_idx:end_idx]
 
@@ -478,7 +478,7 @@ def main():
     #plot_control_jacobians_wrt_w(residual_mlp, 293.15, 40, 100, 1000)
     data = {"true": T_true, "nominal": T_preds_nom, "adaptive": T_preds_nn}
     sim_df = pd.DataFrame(data=data)
-    sim_df.to_csv("simulation_results_less_confidence_mismatched.csv", index=False)
+    sim_df.to_csv("simulation_results_mismatched_for_presentation.csv", index=False)
 
 if __name__ == "__main__":
     main()

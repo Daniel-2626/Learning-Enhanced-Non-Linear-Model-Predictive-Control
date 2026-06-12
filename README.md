@@ -62,6 +62,7 @@ Using an untrained network in the MPC degrades performance. The `Offline_Trainin
 ### Vectorized Trajectory Loss
 
 The original implementation of trajectory loss resulted in long training times. To accelerate this process, a vectorized formulation was implemented and is available in the `Vectorized_Trajectory_Loss/` directory.
+> **Note:** This implementation has not been thoroughly tested. However, since training times are reduces 7-10 x by using vectorization it is worth looking into, checking the code and testing it. 
 
 ### Cascaded Tanks Benchmark
 

@@ -1,39 +1,80 @@
-# Master Thesis Learning-Enchanced Nonlinear Model Predictive Control
-Thesis by Daniel Joseph McCauley (MPSYS) and Lech Kazimerz Kula (MPSYS), Chalmers University of Technology, 2026
+# Learning-Enhanced Nonlinear Model Predictive Control
 
-## Summary
-This GitHub includes a battery thermal management system simulated in Simulink, based on: https://se.mathworks.com/help/hydro/ug/ev-battery-cooling.html
-The model is in the file: Adaptive_Cool_and_Heat_EVBatteryCoolingSystem
-Main contributions are codes for model predictive control (MPC) formulation of battery thermal management. The goal of the theis was to solve "model mismatch" using Neural Networks. 
-First, a model was developed based on physical principles and parameter fitting. 
-Second, model mismatch was introduced by changing the plant, such that the model originally developed would be inaccurate.  
-### Notes on usage
-The thesis had mixed results for using learning-enhanced MPC in BTM systems. Thescaling in the MPC is done in an unintuitive way. Scaling was done to get inputs, states and disturbances in the same order of magnitude, instead of max scaling. The results in the thesis were obtained on this, and therefore code kept as is. When using this code, it would be good to redifine the following scales
-        model.omega_scale = 100
-        model.Q_heat_scale = 1000
-        model.T_bat_scale = 100
-        model.current_scale = 25 
-so that they are max scaled. This is done properly in Vectorized_Trajectory_Loss/vectorized_trajectory_loss_adaptive_nn_mpc_battery.py but NOT tested thoroughly. 
-### BTM MPC 
+> **Master's Thesis | Chalmers University of Technology, 2026**
+> **Authors:** Daniel Joseph McCauley (MPSYS) & Lech Kazimerz Kula (MPSYS)
 
-nominal_acados_mpc_battery_new_scaling <-- A model predictive controller for reference tracking based on a physics model 
+## Overview
 
-adaptive_trajectory_loss_mpc_battery <-- An adaptive model predictive controller for reference tracking with a neural network residual added to the physics model. Neural network learns on "trajectory loss"
+This repository contains a Battery Thermal Management (BTM) system simulated in Simulink, based on the [MathWorks EV Battery Cooling System model](https://se.mathworks.com/help/hydro/ug/ev-battery-cooling.html).
 
-adaptive_derivative_loss_mpc_battery <-- An adaptive model predictive controller for reference tracking with a neural network residual added to the physics model. Neural network learns on "derivative loss"
+* **Core Model:** `Adaptive_Cool_and_Heat_EVBatteryCoolingSystem`
+* **Main Contribution:** Code for the Model Predictive Control (MPC) formulation of battery thermal management.
 
-nominal_economic_mpc_battery_new_scaling <-- An economic model predictive controller based on a physics model
+The primary goal of this thesis was to solve "model mismatch" using Neural Networks. The methodology followed two main steps:
 
-adaptive_economic_trajectory_loss <-- An economic model predictive controller with a neural network residual added to the physics model. Neural network learns on "trajectory loss"
+1. A baseline model was developed based on physical principles and parameter fitting.
+2. Model mismatch was intentionally introduced by altering the plant, rendering the originally developed model inaccurate so the learning-enhanced controller could be tested.
 
-import_and_clear_python_function <-- Help code that opens the model and imports the python programs for use within Simulink
+---
+
+## Important Notes on Usage
+
+The thesis yielded mixed results regarding the application of learning-enhanced MPC in BTM systems.
+
+**Scaling Considerations**
+The scaling in the MPC is implemented in an unintuitive way. Rather than using max scaling, it was designed to bring inputs, states, and disturbances into the same order of magnitude. Because the thesis results were obtained using this configuration, the code has been kept as-is to preserve reproducibility.
+
+When using or adapting this code, it is highly recommended to redefine the following scales to achieve proper max scaling:
+
+```python
+model.omega_scale = 100
+model.Q_heat_scale = 1000
+model.T_bat_scale = 100
+model.current_scale = 25 
+
+```
+
+*Note: Proper max scaling is implemented in `Vectorized_Trajectory_Loss/vectorized_trajectory_loss_adaptive_nn_mpc_battery.py`, but it has **not** been thoroughly tested.*
+
+---
+
+## Repository Structure & Modules
+
+### Battery Thermal Management (BTM) MPC
+
+| Script / Controller | Description |
+| --- | --- |
+| `nominal_acados_mpc_battery_new_scaling` | An MPC for reference tracking based purely on a physics model. |
+| `adaptive_trajectory_loss_mpc_battery` | An adaptive MPC for reference tracking. A neural network residual is added to the physics model and learns via "trajectory loss." |
+| `adaptive_derivative_loss_mpc_battery` | An adaptive MPC for reference tracking. A neural network residual is added to the physics model and learns via "derivative loss." |
+| `nominal_economic_mpc_battery_new_scaling` | An economic MPC based strictly on a physics model. |
+| `adaptive_economic_trajectory_loss` | An economic MPC with a neural network residual added to the physics model, learning via "trajectory loss." |
+| `import_and_clear_python_function` | Helper code that opens the model and imports the required Python programs for use within Simulink. |
+
 ### Offline Training
-Using an untrained network in MPC degrades performance. Therefore there is code for offline training the neural networks in the folder Offline_Training/, together with pretrained networks and data collected on matched/mismatched systems
+
+Using an untrained network in the MPC degrades performance. The `Offline_Training/` folder contains:
+
+* Code for offline training of the neural networks.
+* Pre-trained networks.
+* Data collected on matched and mismatched systems.
 
 ### Vectorized Trajectory Loss
-The implemenation of trajectory loss had long training. To shorten training times, a vectorized formulation was implemented, available in Vectorized_Trajectory_Loss/.
+
+The original implementation of trajectory loss resulted in long training times. To accelerate this process, a vectorized formulation was implemented and is available in the `Vectorized_Trajectory_Loss/` directory.
+
 ### Cascaded Tanks Benchmark
-For a quick introduction to the workings of the learning-enhanced nonlinear model predictive control code for reference tracking of two Cascaded Tanks is included in the folder Cascaded_Tanks/
-Here there is code for MPC based on a physics model (nominal_mpc_cascaded_tanks), adaptive MPC using trajectory loss (traj_adaptive_nn_mpc_cascaded_tanks) and adaptive MPC using derivative loss (deriv_adaptive_nn_mpc_cascaded_tanks)
-### Other code
-The rest of the code is not strictly necessary to run the BTM/Cascaded Tanks MPC. However, they include plotting and analysis scripts. There is no guarantee that they work in their current states, some files might have to be moved due to changes in folder structure. 
+
+For a quick introduction to the inner workings of the learning-enhanced nonlinear MPC code, a reference tracking benchmark for two cascaded tanks is included in the `Cascaded_Tanks/` folder.
+
+| Script | Description |
+| --- | --- |
+| `nominal_mpc_cascaded_tanks` | Baseline MPC based on a physics model. |
+| `traj_adaptive_nn_mpc_cascaded_tanks` | Adaptive MPC utilizing trajectory loss. |
+| `deriv_adaptive_nn_mpc_cascaded_tanks` | Adaptive MPC utilizing derivative loss. |
+
+### Other Code & Analysis
+
+The remainder of the repository contains plotting and analysis scripts.
+
+> **Note:** These scripts are not strictly necessary to run the BTM or Cascaded Tanks MPC code. There is no guarantee that they work flawlessly in their current state; some files may require path adjustments due to changes in the folder structure.

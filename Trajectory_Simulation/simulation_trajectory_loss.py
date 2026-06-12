@@ -37,9 +37,7 @@ class MLP(nn.Module):
 
         net = self.net(x)
         #return net
-        return self.tau * torch.tanh(net) # Kinda BS cuz then our residual NN is basically just a tanh function
-        # Or in other words: An expected value in two parts
-        # But not really. Not necssarily tanh in time, just in inputs.
+        return self.tau * torch.tanh(net) 
 
 # MAML Training Loop
 
@@ -51,7 +49,7 @@ def plot_control_jacobians_wrt_q(model, T_bat_fixed, current_fixed, omega_scale,
     # Fixed inputs (normalized)
     t_in = torch.full_like(q_range, T_bat_fixed / 100.0)
     i_in = torch.full_like(q_range, current_fixed / 25.0)
-    w_in = torch.full_like(q_range, 2) # Fixed pump at 50%
+    w_in = torch.full_like(q_range, 2) # Fixed pump at 2 in scaled units
     
     # Concatenate: [T, I, Omega, Q]
     inputs = torch.cat([t_in, i_in, w_in, q_range], dim=1)

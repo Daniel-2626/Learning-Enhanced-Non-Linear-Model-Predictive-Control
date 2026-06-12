@@ -7,3 +7,4 @@ slprj/
 *.mexa64
 Results/
 Results/
+*.json

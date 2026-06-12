@@ -33,7 +33,7 @@ plot(time, current, 'LineStyle','--', 'LineWidth',2)
 current_intp1_repeated = repmat(current_intp1, 1,10)
 writematrix(current_intp1_repeated', "current_intp1.csv")
 
-%% RMS
+%% RMS instead of 1 s current data
 current_5s_rms = sqrt(mean(reshape(current_intp1_repeated, 5, []).^2, 1));
 plot(current_5s_rms)
 hold on

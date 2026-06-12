@@ -18,7 +18,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import root_mean_squared_error#mean_squared_error
 from scipy.signal import savgol_filter
 from scipy import signal
-
+"""
+IN THESIS WE NEVER INCLUDED ECONOMIC DERIVATIVE LOSS
+THIS CODE SHOULD BE TREATED AS HIGHLY EXPERIMENTAL
+"""
 
 seed = sum([ord(char) for char in "DIAMONDS"])
 np.random.seed(seed)
@@ -35,15 +38,13 @@ class MLP(nn.Module):
         self.net = nn.Sequential(*layers)
     def forward(self, x):
         net = self.net(x)
-        #return net
-        return self.tau * torch.tanh(net) # Kinda BS cuz then our residual NN is basically just a tanh function
-        # Or in other words: An expected value in two parts
-        # But not really. Not necssarily tanh in time, just in inputs.
+        #r bound NN by hyperbolic tangent
+        return self.tau * torch.tanh(net) 
 class BatteryLearnedDynamics:
-    def __init__(self, residual_model, lambda_nn): # remove gym_env for cascaded tank
+    def __init__(self, residual_model, lambda_nn): 
         self.residual_model = residual_model
         self.lambda_nn = lambda_nn
-    def model(self, T_env): # remove gym_env for cascaded tank
+    def model(self, T_env): 
         model = cs.types.SimpleNamespace()
         model.omega_scale = 100
         model.Q_heat_scale = 1000

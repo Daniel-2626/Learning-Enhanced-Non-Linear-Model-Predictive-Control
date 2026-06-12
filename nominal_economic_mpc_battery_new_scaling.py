@@ -580,7 +580,7 @@ class Controller:
         # Save data to CSV
         if self.dt*self.current_iterate >= 3*2470:
             df = pd.DataFrame(data=self.residual_dictionary)
-            df.to_csv("matched_residuals_thermal_management_cooling.csv", index=False)
+            df.to_csv("Offline_Training/Training_Data/matched_residuals_thermal_management_cooling.csv", index=False)
         # Collect data
         if self.current_iterate > 0:
             self.collect_data(T_bat_0, dT_bat)

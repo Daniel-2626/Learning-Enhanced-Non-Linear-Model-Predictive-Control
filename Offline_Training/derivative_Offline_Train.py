@@ -13,33 +13,20 @@ from scipy.signal import savgol_filter
 from scipy import signal
 import random
 import time
-
+"""
+Offline training works by reading a csv of the data 
+Each input and output should be in a named column
+"""
 seed = 42
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
 # Load dataset of residuals
-csv_path = os.path.join(os.path.dirname(__file__), 'residuals_matched_heating.csv')
+csv_path = os.path.join(os.path.dirname(__file__), 'Training_Data/residuals_matched_heating.csv')
 df = pd.read_csv(csv_path)
 print(df.head())
-#training_data = df[['T_bat', 'current', 'omega_scaled', 'Q_heat_scaled']].to_numpy()
-#training_data = df[['T_bat', 'current', 'Q_heat_scaled']].to_numpy()[:2000]
 
-#training_data[:,1] = 25*training_data[:,1]e
-#training_data[:,0] = end*training_data[:,0]
-#training_data = df[['current']].to_numpy()[end:400]
 
-#training_data[:,0] = end*training_data[:,0]
-#training_data[:,1] = end*training_data[:,1]
-#training_data = df[['T_bat', 'current', 'Q_heat_scaled']].to_numpy()
-
-#training_data = df[['h1', 'h2', 'u']].to_numpy()
-#print(training_data)
-
-#residuals = df[['residual_1', 'residual_2']].to_numpy()
-
-# input and disturbance values (not symbolics because know what happened)
-# Not sure if should take current values or last, but figure that at this moment the change is happening because of the last values
 dt = 5
 
 start = 0
@@ -51,7 +38,9 @@ omega_scale = 100
 Q_heat_scale = 1000
 T_bat_scale = 100
 current_scale = 25
+CELSIUS_TO_KELVIN = 273.15
 
+T_env = 12.5 + CELSIUS_TO_KELVIN # Set T_env when data was collected
 input_data = df[['T_bat', 'current', 'omega_scaled', 'Q_heat_scaled']].to_numpy()[start:end]
 temperatures_data = df[['T_bat']].to_numpy().flatten()[start:end]
 
@@ -69,22 +58,20 @@ Q_heat_scaled_filtered = savgol_filter(Q_heat_scaled_data, window_length=window_
 training_data = np.vstack([temperatures_filtered,current_filtered, omega_scaled_filtered,Q_heat_scaled_data])
 training_data = np.transpose(training_data)
 n_rows, n_columns = input_data.shape
-CELSIUS_TO_KELVIN = 273.15
 
 dT_bat_model_filtered_before = []
+# Filtering residual by using filtered variables
 for row in range(0,n_rows):
-    T_env = 12.5 + CELSIUS_TO_KELVIN
     omega = omega_scale*omega_scaled_filtered[row]
     Q_heat = Q_heat_scale*Q_heat_scaled_filtered[row]
-    #current = self.current_last
-    #T_bat = self.T_bat_last
+
                 
                 
     current = current_scale*current_filtered[row]
     T_bat = T_bat_scale*temperatures_filtered[row]
 
 
-    # Caluclate derivative with model
+    # Calculate derivative with model
     # Parameters
     m_battery = 20*2.5*4
     c_battery = 795
@@ -96,14 +83,13 @@ for row in range(0,n_rows):
     C_battery = 28*3600 # in coloumb
     hA_bat = 2500
 
-    alpha_0 = 0.635039 #0.65
-    alpha_1 = 0.915692 # 0.99 #0.998427 #0.99
-    alpha_2 = 0.919681  #0.999686 #.97
+    alpha_0 = 0.635039 
+    alpha_1 = 0.915692 
+    alpha_2 = 0.919681  
     alpha_3 = 1.47275
     gamma = 7.38325
-            
-    mdot_c = density_coolant*pump_displacement*omega
     # Dynamics
+    mdot_c = density_coolant*pump_displacement*omega
             
     # Get the cooler in and out temps
     NTU_bat  = (alpha_3*hA_bat) / (mdot_c*c_coolant + 1e-3)
@@ -121,9 +107,8 @@ residuals = df[['residual']].to_numpy().flatten()[start:end]
 
 
 
-dT_bat_savgol = 100*savgol_filter(temperatures_data, window_length=window_length, polyorder=polyorder, deriv = 1, delta = dt)
+dT_bat_savgol = T_bat_scale*savgol_filter(temperatures_data, window_length=window_length, polyorder=polyorder, deriv = 1, delta = dt)
 dT_bat_model = df[['T_bat_dot_model']].to_numpy().flatten()[start:end]
-print(dT_bat_model)
 
 dT_bat_model_filtered_before = np.array(dT_bat_model_filtered_before)
 residuals_filtered_before = dT_bat_savgol - dT_bat_model_filtered_before
@@ -164,11 +149,11 @@ X_test = training_data[int(N_data_points*train_size):]
 y_train = residuals_filtered_before[:int(N_data_points*train_size),:]
 y_test = residuals_filtered_before[int(N_data_points*train_size):]
 
-#X_train, X_test, y_train, y_test = train_test_split(training_data, residuals_filtered_before, test_size=0.3)
 
 class MLP(nn.Module):
     def __init__(self, input_dim=4, output_dim=2, hidden_dim=16, num_layers=2):
         super().__init__()
+        # tau = confidence parameter in thesis
         self.tau = nn.Parameter(torch.tensor([0.001]), requires_grad=False)        
 
         layers = [nn.Linear(input_dim, hidden_dim), nn.Tanh()]
@@ -179,11 +164,11 @@ class MLP(nn.Module):
         self.net = nn.Sequential(*layers)
     def forward(self, x):
         net = self.net(x)
-        #return net 
+        #bound neural network by tanh
         return self.tau * torch.tanh(net)
 
-# MAML Training Loop
 
+# Training loop
 def main():
     device = torch.device("cpu")
     
@@ -193,22 +178,22 @@ def main():
     output_dim = 1
     hidden_dim = 16
     num_layers = 2
-
+    weight_decay=0.1
     model = MLP(input_dim=input_dim, output_dim=output_dim, hidden_dim=hidden_dim, num_layers=num_layers).to(device)
     residual_mlp = MLP(input_dim = input_dim, output_dim=output_dim, hidden_dim=hidden_dim, num_layers=num_layers) # the network
     start = time.time()
     for param in residual_mlp.parameters():
         param.requires_grad = False
     residual_mlp = residual_mlp
-    residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=learning_rate, weight_decay=0.1) # lr = learning rate, the optimizer
-    #residual_optimizer = torch.optim.Adam(residual_mlp.parameters(), lr=learning_rate) # lr = learning rate, the optimizer
+    residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=learning_rate, weight_decay=weight_decay) # lr = learning rate, the optimizer
     
     residual_criterion = nn.MSELoss()
-    print(y_train.shape)
+
     X_batch = torch.tensor(X_train, dtype=torch.float32)
     y_target = torch.tensor(y_train.copy(), dtype=torch.float32)
     confidence = np.sqrt(np.power(y_train,2).mean())
     print('confidence', confidence)
+    # For automatic selection of confidence, did not work in current formulation
     #np.sqrt(np.power(dynamics_savgol-dynamics_model,2).mean())
     with torch.no_grad():
         residual_mlp.tau.copy_(torch.tensor([confidence]))            
@@ -218,26 +203,21 @@ def main():
         residual_optimizer.zero_grad() # optimizer object
         prediction = residual_mlp(X_batch) # gives data to network to make a prediction
         loss = residual_criterion(prediction, y_target)
-        #l1_norm = sum(torch.linalg.norm(p, 1) for p in residual_mlp.parameters())
-        #l2_norm = sum(p.pow(2).sum() for p in self.residual_mlp.parameters())
-        #regularization = 0.1
-        #loss += regularization * l1_norm
+
         loss.backward() # calculates gradient
         nn.utils.clip_grad_norm_(
             residual_mlp.parameters(),
             max_norm= 0.01
         )
-        residual_optimizer.step() # one optimization step to update parameters
+        residual_optimizer.step() 
     end = time.time()
-    print("elapsed", 1000*(start-end))
+    print("elapsed", 1000*(end-start))
     num_params = 0
 
     for p in residual_mlp.parameters(): 
         p.requires_grad = False
-        num_params += len(p.flatten())
-        #print(p)
-    print("num_params", num_params)
-    torch.save(residual_mlp.state_dict(), "heating_pretrain_deriv_network_4_input_tanh_FINAL.pth")
+
+    torch.save(residual_mlp.state_dict(), "Pretrained_Networks/REMOVETEST_SAVEheating_pretrain_deriv_network_4_input_tanh.pth")
 
     test_data = torch.tensor(X_test, dtype=torch.float32)
     residual_mlp.eval()
@@ -257,6 +237,7 @@ def main():
     plt.figure(3)
     plt.plot(target_predicted)
     plt.plot(y_test)
+    plt.legend(("y_nn", "y_test"))
 
     plt.figure(4)
     print(residuals.shape)
@@ -275,12 +256,11 @@ def main():
     plt.plot(residuals_filtered_before)
     plt.legend(("target predicted", "residuals filtered before"))
 
-    #plt.ylim(0, 2/end) # Set y-axis  
+
 
 
     plt.show()
-    #for var_name in residual_optimizer.state_dict():
-    #    print(var_name, '\t', residual_optimizer.state_dict()[var_name])
+
 
  
 if __name__ == "__main__":

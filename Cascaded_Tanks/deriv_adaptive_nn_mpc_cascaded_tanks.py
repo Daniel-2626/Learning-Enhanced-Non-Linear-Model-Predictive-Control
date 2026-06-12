@@ -11,40 +11,42 @@ import pandas as pd
 import os 
 from datetime import datetime
 import random as random
-COST = "LINEAR_LS" # standard cost
-SAVE_FLAG = False
+
 seed = 42
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
-
+### MLP ARCHITECTURE ###
+# input_dim, output_dim, hidden_dim, num_layers will be changed lower in the code
 class MLP(nn.Module):
     def __init__(self, input_dim=2, output_dim=1, hidden_dim=128, num_layers=3):
         super(MLP, self).__init__()
         self.tau = 2
-        layers = [nn.Linear(input_dim, hidden_dim), nn.Tanh()] # nn.ReLU rectified linear function (max(x,0))
+        layers = [nn.Linear(input_dim, hidden_dim), nn.Tanh()] # nn.Tanh hyperbolic tangent
         for _ in range(num_layers - 1):
-            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.Tanh()]) # nn.Linear applies an affine transform. hidden_dim features and hidden_dim out features
+            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.Tanh()]) # nn.Linear applies an affine transform
         layers.append(nn.Linear(hidden_dim, output_dim))
         self.net = nn.Sequential(*layers)
 
     def forward(self, x):
         net =  self.net(x)
+        # Bound NN output by tanh and confidence parameter tau
         return self.tau* torch.tanh(net)
+### CASCADED TANKS DYNAMICS ###
 class CascadedTankLearnedDynamics:
-    def __init__(self, residual_model): # remove gym_env for cascaded tank
+    def __init__(self, residual_model): 
         self.residual_model = residual_model # Residual model is L4Casadi residual
     
     def model(self):
+        # Change for mistmach. Nominal = 1
         nominal_ratio = 0.7
-        A1 = 1 #* nominal_ratio
+        A1 = 1 
         a1 = 0.1 * nominal_ratio
-        A2 = 1 #* nominal_ratio
-        a2 = 0.1 * nominal_ratio #* nominal_ratio
+        A2 = 1 
+        a2 = 0.1 * nominal_ratio 
         
-        k = 1000#*nominal_ratio
-        rho = 1000 #*nominal_ratio
-        
+        k = 1000
+        rho = 1000 
         g = 9.82
         
     
@@ -53,14 +55,14 @@ class CascadedTankLearnedDynamics:
         h2 = cs.MX.sym('h2')
         X = cs.vertcat(h1, h2)
         u = cs.MX.sym('u')
-        #leakage = cs.MX.sym('leakage')
+        
+        # Switch to turn on neural network residual (gets turned on after initial training)
         nn_on = cs.MX.sym("nn_on")
         nx = 2
         nu = 1
 
         # Dynamics
-        
-        h1_dot =  k*u/(rho*A1) - a1/A1 * cs.sqrt(2*g*h1+0.00001)  #+ leakage
+        h1_dot =  k*u/(rho*A1) - a1/A1 * cs.sqrt(2*g*h1+0.00001) 
         h2_dot = a1/A1 * cs.sqrt(2*g*h1 + 0.00001) - a2/A2 * cs.sqrt(2*g*h2 + 0.00001) 
         X_dot_nominal = cs.vertcat(h1_dot, h2_dot)
 
@@ -68,8 +70,8 @@ class CascadedTankLearnedDynamics:
         residual = self.residual_model(mlp_input.T).T 
         X_dot_residual = cs.vertcat(residual[0], residual[1]) # h1 dot and h2 dot residual
 
-        f_expl = X_dot_nominal + nn_on * X_dot_residual # adding x dot residual leads to some stochasticity, maybe because we have a arbitrary neural network initially?
-        x_start = np.array([1,1]) # initial position or initial guess?
+        f_expl = X_dot_nominal + nn_on * X_dot_residual 
+        x_start = np.array([1,1]) # initial position, gets overwritten
 
         # store to struct
         model = cs.types.SimpleNamespace()
@@ -77,21 +79,22 @@ class CascadedTankLearnedDynamics:
         model.xdot = cs.MX.sym('xdot', 2)
         model.u = u
         model.z = cs.vertcat([])
-        model.p = nn_on #cs.vertcat([])  #leakage # cs.vertcat([])
+        model.p = nn_on 
         model.f_expl = f_expl
         model.f_nominal = X_dot_nominal
         model.x_start = x_start
-        model.constraints = cs.vertcat([]) # add constraints here or in mpc?
+        model.constraints = cs.vertcat([]) 
         model.name = "cascaded_learned"
         
         return model 
-
+### MODEL PREDICTIVE CONTROLLER ### 
 class MPC:
     def __init__(self, model, N, t_horizon, external_shared_lib_dir, external_shared_lib_name):
         self.model = model
         self.N = N
         self.t_horizon = t_horizon
-        self.external_shared_lib_dir = external_shared_lib_dir
+        # Libraries for generated auto-generated jacobians/hessians by L4CasADi
+        self.external_shared_lib_dir = external_shared_lib_dir 
         self.external_shared_lib_name = external_shared_lib_name
 
     @property # a decorator
@@ -127,24 +130,25 @@ class MPC:
         ocp.cost.cost_type_e = 'LINEAR_LS'
 
         # state 
-        ocp.cost.Vx = np.zeros((ny, nx)) # i feel like this should be nx,nx ||Vx x||^2 
+        ocp.cost.Vx = np.zeros((ny, nx))
         for i in range(nx):
-            ocp.cost.Vx[i,i] = 1 # so set the matrix coeff corr to u to 0. maybe the dim of Vx is set to be the same as Vu
+            ocp.cost.Vx[i,i] = 1 
         ocp.cost.Vu = np.zeros((ny, nu))
         for i in range(nu):
             ocp.cost.Vu[i + nx, i] = 1
-        ocp.cost.Vz = np.array([[]]) # don't know what the V_z z, what the variable z should be
+
+        ocp.cost.Vz = np.array([[]]) 
         ocp.cost.Vx_e = np.eye(nx)
 
         ocp.parameter_values = 0
-        l4c_y_expr = None
+        l4c_y_expr = None # Linear cost, no need to set y_expr in cost function
 
         # Define weight parameters
         Q = 1 * np.diag([10, 10])
         R = 1 * np.diag([0.1])
         ocp.cost.W = scipy.linalg.block_diag(Q,R)
 
-        # Initial state (will be overwritten?)
+        # Initial state 
         ocp.cost.W_e = Q 
         ocp.cost.yref = np.zeros((ny, ))
         ocp.cost.yref_e = np.zeros((ny_e, ))
@@ -159,7 +163,7 @@ class MPC:
         ocp.constraints.lbu = np.array([0])
         ocp.constraints.ubu = np.array([u_max])
         ocp.constraints.idxbu = np.array([0])
-        ocp.constraints.idxbx = np.array([0,1]) # at what indices to have constraints? 
+        ocp.constraints.idxbx = np.array([0,1]) 
         ocp.constraints.ubx = np.array([h1_max, h2_max])
         ocp.constraints.lbx = np.array([0, 0])
 
@@ -175,7 +179,7 @@ class MPC:
 
     def acados_model(self, model):
         model_ac = AcadosModel()
-        model_ac.f_impl_expr = model.xdot - model.f_expl # Implicit 0 = xdot - f
+        model_ac.f_impl_expr = model.xdot - model.f_expl
         model_ac.f_expl_expr = model.f_expl
         model_ac.x = model.x
         model_ac.xdot = model.xdot
@@ -183,8 +187,18 @@ class MPC:
         model_ac.p = model.p
         model_ac.name = model.name
         return model_ac
-
-
+### RK4 for simulating trajectory ### 
+def RK4(state, input_u, dt, f):
+    K1 = f(state, input_u)
+    K2 = f(state + dt/2 * K1, input_u)
+    K3 = f(state + dt/2 * K2, input_u)
+    K4 = f(state + dt * K3, input_u)
+    next_state = state + (dt/6) * (K1 + 2*K2 + 2*K3 +K4)
+    return next_state
+# -----------------------------------------------------------------------
+# END OF CLASS/FUNCTION DEFINITIONS, BEGINNING OF SCRIPT
+# -----------------------------------------------------------------------
+### TRUE SIMULATION PARAMETERS 
 A1 = 1
 a1 = 0.1
 A2 = 1
@@ -196,11 +210,13 @@ g = 9.82
 h1 = cs.SX.sym('h1')
 h2 = cs.SX.sym('h2') 
 u = cs.SX.sym('u_in')
-## Actual model
+## True plant model
 #h1_dot = k*u/(rho*A1) - a1/A1 * cs.sqrt(2*g*h1+0.00001) #+ a2/A2 * cs.sqrt(2*g*h2 + 0.00001) 
-h1_dot = k*u/(rho*A1)*cs.exp(-u/10) - a1/A1 * cs.sqrt(2*g*h1+0.00001) #+ a2/A2 * cs.sqrt(2*g*h2 + 0.00001) 
+# (Can introduce mismatch here, e.g. add terms to dynamics, see below for an example with nonlinear saturation (note u >= 0))
+h1_dot = k*u/(rho*A1)*cs.exp(-u/10) - a1/A1 * cs.sqrt(2*g*h1+0.00001)
 
 h2_dot = a1/A1 * cs.sqrt(2*g*h1 + 0.00001) - a2/A2 * cs.sqrt(2*g*h2 + 0.00001) #- 0.1*k*u/(rho*A2)
+
 ode = cs.vertcat(h1_dot, h2_dot)
 states = cs.vertcat(
     h1,
@@ -208,19 +224,17 @@ states = cs.vertcat(
 )
 f = cs.Function("f", [states,u], [ode], ["x","u"], ["ode"])
         
-def RK4(state, input_u, dt, f):
-    K1 = f(state, input_u)
-    K2 = f(state + dt/2 * K1, input_u)
-    K3 = f(state + dt/2 * K2, input_u)
-    K4 = f(state + dt * K3, input_u)
-    next_state = state + (dt/6) * (K1 + 2*K2 + 2*K3 +K4)
-    return next_state
-# Residual MLP: Lightweight
-residual_mlp = MLP(input_dim = 2 + 1, output_dim=2, hidden_dim=8, num_layers=2) # the network
-residual_mlp.load_state_dict(torch.load("cascaded_tanks_pretrain_fixed_epochs.pth", weights_only=True))
 
+# Residual MLP: Initialization
+residual_mlp = MLP(input_dim = 2 + 1, output_dim=2, hidden_dim=8, num_layers=2) # the network
+# Loaded MLP must have the same input_dim, output_dim, hidden_dim and num_layers
+# Comment this line if do not want to use a pretrained network
+residual_mlp.load_state_dict(torch.load("cascaded_tanks_deriv_pretrain.pth", weights_only=True))
+
+# Freezes params in neural network, used when evaluating the network (e.g. in MPC optimization)
 for param in residual_mlp.parameters():
     param.requires_grad = False
+
 l4c_residual = l4c.L4CasADi(residual_mlp, name="cascadedtank", mutable=True)
 residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=1e-2, weight_decay=0.3) # lr = learning rate, the optimizer
 residual_criterion = nn.MSELoss()
@@ -234,7 +248,7 @@ learned_model = CascadedTankLearnedDynamics(l4c_residual)
 casadi_model = learned_model.model()
 
 nominal_func = cs.Function('nom', [casadi_model.x, casadi_model.u], [casadi_model.f_nominal]) # x, u --> f What our controller knowns
-print(nominal_func)
+
 solver = MPC(model=learned_model.model(), N=N, t_horizon = t_horizon,
             external_shared_lib_dir=l4c_residual.shared_lib_dir,
             external_shared_lib_name=l4c_residual.name).solver # Returns the solver object from MPC
@@ -242,23 +256,27 @@ solver = MPC(model=learned_model.model(), N=N, t_horizon = t_horizon,
 # Simulation setup 
 dt = t_horizon/N
 Tsim = 100
-xt = np.array([0.5,0.5])
+xt = np.array([0.5,0.5]) # Initial state
 Steps = int(Tsim / dt)
 h1_history, u_history, h1_ref_history, h2_ref_history, h2_history, opt_times = [xt[0]], [], [], [], [xt[1]], []
 
+# Reference
 h1_ref = 1
 h2_ref = 1
-# Residual Finetune
+
+# Data for training residual
 obs_buffer = []
 batch_size = 50
 T_update = 50 # int(t_horizon//(dt))
+# Initially NN is off
 nn_on = 0
 
+# Used when saving to csv
 residual_dictionary = {'run': [], 'h1':[], 'h2': [], 'u': [], 'residual_1': [], 'residual_2': []}
 results_adaptive = {'run': [], 'h1':[], 'h2': [], 'u': []}
 
 def DM2Arr(dm):
-    # returns a full matrix instead if a soarse ibe
+    # returns a full matrix instead if a sparse one
     return np.array(dm.full())
 
 for i in range(Steps):
@@ -303,90 +321,69 @@ for i in range(Steps):
     h1_history.append(xt[0])
     h2_history.append(xt[1])
 
-    #print(xt, ut)
+    # True state dynamics (from evaluating plant dynamics)
     state_dynamics = DM2Arr(f(xt, ut))
-    #print(state_dynamics)
-    #stop
-    mu = 0
-    sigma = 0.01
-    randn_1 = 0 #np.random.normal(mu,sigma)
-    randn_2 = 0 #np.random.normal(mu, sigma)
-    obs_buffer.append((xt[0], xt[1], ut, state_dynamics[0][0]+randn_1, state_dynamics[1][0]+randn_2))
 
+    # Observations consist of states, input, and state dynamics
+    obs_buffer.append((xt[0], xt[1], ut, state_dynamics[0][0], state_dynamics[1][0]))
+    # residual = plant dynamics - control model dynamics
     residual_1 = state_dynamics[0][0] - nominal_func(xt[:2], ut)[0][0]
     residual_2 = state_dynamics[1][0] - nominal_func(xt[:2], ut)[1][0]
     residual_dictionary['run'].append(0)
     residual_dictionary['h1'].append(xt[0])
     residual_dictionary['h2'].append(xt[1])
     residual_dictionary['u'].append(ut)
- 
     residual_dictionary['residual_1'].append(residual_1)
     residual_dictionary['residual_2'].append(residual_2)
-    #print(obs_buffer)
+
  
-    # update every 50 time steps
+    # update every T_update iterations
     if i > 0 and (i % T_update) == 0 and len(obs_buffer) >= batch_size:
+        # NN on after this step
         nn_on = 1
         data = np.array(obs_buffer[-batch_size:])
-        # data[:, :3] h1, h2 and u
+        # data[:, :3] = h1, h2, u
         X_batch = torch.tensor(data[:, :3], dtype=torch.float32)
-        # h1_dot, h2_dot
-        #print(data[-1])
+        # h1_dot, h2_dot from plant dynamics
         y_true = data[:, 3:]
-        #print(y_true)
        
-        
-
         nominal = np.array([nominal_func(x[:2], x[2]).full().flatten() for x in data])
-        #y_true = np.array([f(x[:2], x[3]).full().flatten() for x in data])
-        y_nominal = nominal[:, :] # dx2 and dx4 from nominal model
-        #print(y_nominal.shape)
-        #print(y_nominal)
-        #print(y_true.shape)
-        #print(y_true)
-        #print(y_true - y_nominal)
-        #stop
-        print(sum(y_true - y_nominal))
+        y_nominal = nominal[:, :] # h1_dot and h2_dot from control model
+
+        # True - Nominal
         y_target = torch.tensor(y_true - y_nominal, dtype=torch.float32)
-        print(y_target)
-        for p in residual_mlp.parameters(): p.requires_grad = True
-        # An epoch
+        
+        for p in residual_mlp.parameters(): 
+            p.requires_grad = True # Unfreezes params in neural network, used when training the network 
+
+        # Epoch loop
         for _ in range(100):
             residual_optimizer.zero_grad() # optimizer object
             prediction = residual_mlp(X_batch) # gives data to network to make a prediction
+            # Minimize (plant - (nominal + residual))^2
             loss = residual_criterion(prediction, y_target)
-            #l2_norm = sum(p.pow(2).sum() for p in residual_mlp.parameters())
-            #regularization = 0.1
-            #loss += regularization * l2_norm
-            loss.backward() # calculates gradient
-            residual_optimizer.step() # one optimization step to update parameters
+
+            loss.backward() 
+            residual_optimizer.step() 
         for p in residual_mlp.parameters(): p.requires_grad = False
         l4c_residual.update(residual_mlp)
 
     elapsed= time.time() - start
     opt_times.append(elapsed)
-# Input variables
-h1 = cs.MX.sym('h1')
-h2 = cs.MX.sym('h2')
-X = cs.vertcat(h1, h2)
-u = cs.MX.sym('u')
-mlp_input = cs.vertcat(X, u)
-residual = l4c_residual(mlp_input.T).T[0] 
-f_res = cs.Function("f_res", [X,u], [residual])
-weights = np.array([])
-for p in residual_mlp.parameters():
-    weights = np.append(weights, p.flatten())
-print(weights)
-print(len(weights))
-print(residual.str(True))
+
+
+
 state_target = np.array([h1_ref, h2_ref])
 ss_error = cs.norm_2(xt - state_target)
 print("final error", ss_error)
-df = pd.DataFrame(data=residual_dictionary)
-df.to_csv("cascaded_residuals_fixed_epochs.csv", index=False)
 
+### SAVING RESULTS
+#df = pd.DataFrame(data=residual_dictionary)
+#df.to_csv("cascaded_residuals_fixed_epochs.csv", index=False)
 df = pd.DataFrame(data=results_adaptive)
-df.to_csv("cascaded_adaptive_mismatched_deriv_fixed_epochs.csv", index=False)
+df.to_csv("cascaded_adaptive_deriv_mismatched.csv", index=False)
+
+### PLOTTING
 # Convert to numpy arrays for easier indexing
 h1_history = np.array(h1_history)
 h2_history = np.array(h2_history)

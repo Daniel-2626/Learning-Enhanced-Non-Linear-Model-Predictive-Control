@@ -250,7 +250,9 @@ class MPC:
         ocp.cost.W_0 = Q
         ocp.cost.W = Q
         ocp.cost.W_e = np.diag(np.array([0.0]))  # Terminal cost only considers state, set this to 0 for no weighing
-
+        ocp.cost.yref_0 = np.zeros((ny, ))
+        ocp.cost.yref = np.zeros((ny, ))
+        ocp.cost.yref_e = np.zeros((ny_e, ))
         # Initial state
         ocp.constraints.x0 = model.x_start
 
@@ -405,7 +407,7 @@ class Controller:
         # Freeze parameters        
         for param in residual_mlp.parameters():
             param.requires_grad = False
-        residual_mlp.load_state_dict(torch.load("Pretrained_Networks/economic_pretrain_FINAL.pth", weights_only=True))
+        residual_mlp.load_state_dict(torch.load("Offline_Training/Pretrained_Networks/economic_pretrain_FINAL.pth", weights_only=True))
         self.residual_mlp = residual_mlp
         self.residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=learning_rate, weight_decay=weight_decay) 
         self.residual_criterion = nn.MSELoss()

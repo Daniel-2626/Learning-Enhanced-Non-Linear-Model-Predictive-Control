@@ -118,7 +118,8 @@ ode_model = ca.vertcat(x1_dot_model, x2_dot_model)
 f_model = ca.Function("f_model", [states,controls], [ode_model], ["x","u"], ["ode"])
 ## Actual model
 #x1_dot = k*u_in/(rho*A1) - a1/A1 *ca.sqrt(2*grav*h_1+0.001) 
-x1_dot = k*u_in/(rho*A1)*ca.exp(-u_in/10) - a1/A1 *ca.sqrt(2*grav*h_1+0.001) 
+
+x1_dot = k*u_in/(rho*A1)*ca.exp(-u_in/10) - a1/A1 *ca.sqrt(2*grav*h_1+0.001) #<-- mismatched with hidden dynamics
 
 
 x2_dot = a1/A1 *ca.sqrt(2*grav*h_1+0.001) - a2/A2 *ca.sqrt(2*grav*h_2+0.001) #- 0.1*k*u_in/(rho*A2)
@@ -202,7 +203,7 @@ cat_states = DM2Arr(X0)
 cat_controls = DM2Arr(u0[:,0])
 times = np.array([[0]])
 
-result_nominal = {'run': [], 'h1':[], 'h2': [], 'u': []}
+result_nominal = {'run': [], 'h1':[], 'h2': [], 'u': [], 'residual_1': [], 'residual_2': []}
 
 if __name__ == '__main__':
     main_loop = time()
@@ -230,13 +231,19 @@ if __name__ == '__main__':
 
         
         u = ca.reshape(sol['x'][n_states*(N+1):], n_controls, N   ) # gives u as a vector where rows are the different inputs and columns the time steps (applied input at col 0)
-        
+        print(u[0])
+        state_dynamics = DM2Arr(f_actual(state_init, u[0]))
+
+        # residual = plant dynamics - control model dynamics
+        residual_1 = state_dynamics[0][0] - f_model(state_init, u[0])[0][0]
+        residual_2 = state_dynamics[1][0] - f_model(state_init, u[0])[1][0]
+        print(residual_1)
         result_nominal['run'].append(0)
-        print(X0.shape)
-        print(state_init.shape)
         result_nominal['h1'].append(state_init[0,0])
         result_nominal['h2'].append(state_init[1,0])
         result_nominal['u'].append(u[:,0])
+        result_nominal['residual_1'].append(residual_1)
+        result_nominal['residual_2'].append(residual_2)
 
         
         X0 = ca.reshape(sol['x'][:n_states*(N+1)], n_states, N+1)
@@ -287,7 +294,6 @@ if __name__ == '__main__':
 h_1_num = cat_states[0, 0, :]
 h_2_num = cat_states[1, 0, :]
 u_in_num = cat_controls
-
 df = pd.DataFrame(data=result_nominal)
 df.to_csv("cascaded_nominal_mismatched.csv", index=False)
 print("input for steady state at reference:", a1*np.sqrt(2*grav*h_1_target))
@@ -306,6 +312,6 @@ ax2.legend(["$u_{in}$", "$u_{in,ss}$"])
 ax2.set_title("Input")
 ax2.set_xlabel("Iteration")
 ax2.set_ylabel("Voltage (V)")
-fig.suptitle("Nominal controller operating with mismatched (70%) model information", fontsize=16)
+fig.suptitle("Nominal controller operating with DESCRIBE MISMATCH model information", fontsize=16)
 
 plt.show()

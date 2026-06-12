@@ -823,7 +823,7 @@ class Controller:
         # Save data to CSV
         if self.dt*self.current_iterate >= 3*2470:
             df = pd.DataFrame(data=self.residual_dictionary)
-            df.to_csv("residuals_matched_heating_T_env_5.csv", index=False)
+            df.to_csv("Offline_Training/Training_Data/residuals_matched_heating_T_env_5.csv", index=False)
 
         elapsed = 1000*(time.time() - start)
 

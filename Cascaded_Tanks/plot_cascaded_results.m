@@ -1,6 +1,6 @@
 
-adaptive_results = readtable("cascaded_adaptive_mismatched_deriv_fixed_epochs.csv");
-nominal_results = readtable("cascaded_nominal_mismatched.csv");
+adaptive_results = readtable("cascaded_adaptive_traj_matched.csv");
+nominal_results = readtable("cascaded_nominal_matched.csv");
 
 u_nom =nominal_results.u;
 h1_nom = nominal_results.h1;
@@ -35,9 +35,9 @@ yline(h_ref, '--', 'LineWidth', 6)
 xl = xline(nn_on, '-',{'Neural network on'}, 'LineWidth',6);
 %xl.LabelHorizontalAlignment = 'center';
 xl.LabelVerticalAlignment = 'bottom';
-xlim([20 80])
+xlim([0 60])
 ylim([0.7 1.15])
-legend('Derivative loss', 'Nominal', 'Reference')
+legend('Trajectory loss', 'Nominal', 'Reference')
 %ylabel('Height Tank 1 (m)');
 %xlabel('Time (s)');
 set(findall(gcf, '-property', 'FontSize'), 'FontSize', 28);
@@ -60,9 +60,9 @@ yline(h_ref, '--', 'LineWidth', 6)
 xl = xline(nn_on, '-',{'Neural network on'}, 'LineWidth', 6);
 %xl.LabelHorizontalAlignment = 'center';
 xl.LabelVerticalAlignment = 'bottom';
-xlim([20 80])
+xlim([0 60])
 ylim([0.7 1.15])
-legend('Derivative loss', 'Nominal', 'Reference')
+legend('Trajectory loss', 'Nominal', 'Reference')
 %ylabel('Height Tank 1 (m)');
 %xlabel('Time (s)');
 set(findall(gcf, '-property', 'FontSize'), 'FontSize', 28);
@@ -88,7 +88,7 @@ xl = xline(nn_on, '-',{'Neural network on'}, 'LineWidth', 6);
 xl.LabelVerticalAlignment = 'bottom';
 xlim([20 80])
 ylim([0 0.9])
-legend('Derivative loss', 'Nominal')
+legend('Trajectory loss', 'Nominal')
 %ylabel('Height Tank 1 (m)');
 %xlabel('Time (s)');
 set(findall(gcf, '-property', 'FontSize'), 'FontSize', 28);

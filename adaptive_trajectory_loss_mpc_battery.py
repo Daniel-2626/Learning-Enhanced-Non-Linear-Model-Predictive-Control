@@ -537,7 +537,7 @@ class Controller:
         # Freeze parameters        
         for param in residual_mlp.parameters():
             param.requires_grad = False
-        residual_mlp.load_state_dict(torch.load("Pretrained_Networks/heating_pretrain_scaled_network_4_input_new_loss_filtered_tanh_jac_penalty_phys_penalty_FINAL_FINAL.pth", weights_only=True))
+        residual_mlp.load_state_dict(torch.load("Offline_Training/Pretrained_Networks/heating_pretrain_scaled_network_4_input_new_loss_filtered_tanh_jac_penalty_phys_penalty_FINAL_FINAL.pth", weights_only=True))
 
         self.residual_mlp = residual_mlp
         self.residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=learning_rate, weight_decay=weight_decay) 
@@ -577,7 +577,6 @@ class Controller:
         self.Q_heat_scale = casadi_model.Q_heat_scale
         self.T_bat_scale = casadi_model.T_bat_scale
         self.current_scale = casadi_model.current_scale
-        self.residual_scale = casadi_model.residual_scale
         self.T_env = T_env
         # Switch for NN, gets turned on after initial training
         self.nn_on = 0
@@ -810,7 +809,7 @@ class Controller:
             residual_data = torch.tensor([T_bat/self.T_bat_scale, current/self.current_scale, omega/self.omega_scale, Q_heat/self.Q_heat_scale], dtype=torch.float32)
             
             residual = self.residual_mlp(residual_data).numpy().item()
-            T_bat_dot_nn = T_bat_dot_model + self.nn_on*residual/self.residual_scale
+            T_bat_dot_nn = T_bat_dot_model + self.nn_on*residual
             
             T_bat_pred = T_bat + self.dt*T_bat_dot_model
             T_bat_pred_nn = T_bat + self.dt*T_bat_dot_nn

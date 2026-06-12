@@ -216,8 +216,8 @@ def RK4(state, input_u, dt, f):
     next_state = state + (dt/6) * (K1 + 2*K2 + 2*K3 +K4)
     return next_state
 # Residual MLP: Lightweight
-residual_mlp = MLP(input_dim = 2 + 1, output_dim=2, hidden_dim=8, num_layers=1) # the network
-residual_mlp.load_state_dict(torch.load("cascaded_tanks_pretrain.pth", weights_only=True))
+residual_mlp = MLP(input_dim = 2 + 1, output_dim=2, hidden_dim=8, num_layers=2) # the network
+residual_mlp.load_state_dict(torch.load("cascaded_tanks_pretrain_fixed_epochs.pth", weights_only=True))
 
 for param in residual_mlp.parameters():
     param.requires_grad = False
@@ -351,7 +351,7 @@ for i in range(Steps):
         print(y_target)
         for p in residual_mlp.parameters(): p.requires_grad = True
         # An epoch
-        for _ in range(50):
+        for _ in range(100):
             residual_optimizer.zero_grad() # optimizer object
             prediction = residual_mlp(X_batch) # gives data to network to make a prediction
             loss = residual_criterion(prediction, y_target)
@@ -383,10 +383,10 @@ state_target = np.array([h1_ref, h2_ref])
 ss_error = cs.norm_2(xt - state_target)
 print("final error", ss_error)
 df = pd.DataFrame(data=residual_dictionary)
-df.to_csv("cascaded_residuals.csv", index=False)
+df.to_csv("cascaded_residuals_fixed_epochs.csv", index=False)
 
 df = pd.DataFrame(data=results_adaptive)
-df.to_csv("cascaded_adaptive_mismatched_deriv.csv", index=False)
+df.to_csv("cascaded_adaptive_mismatched_deriv_fixed_epochs.csv", index=False)
 # Convert to numpy arrays for easier indexing
 h1_history = np.array(h1_history)
 h2_history = np.array(h2_history)

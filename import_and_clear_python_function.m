@@ -20,7 +20,7 @@ adaptive_economic_new_loss = py.importlib.import_module('adaptive_thermal_manage
 %%
 clear adaptive, clear nominal, clear lms, clear economic, clear adaptive_economic_new_scaling, clear adaptive_scaling, clear adaptive_new_loss, clear adaptive_economic_new_loss
 %rmdir("_l4c_generated/", 's')
-rmdir("c_generated_code/", 's')
+%rmdir("c_generated_code/", 's')
 %adaptive  = py.importlib.import_module('adaptive_nn_mpc_battery');
 
 adaptive_scaling  = py.importlib.import_module('adaptive_nn_mpc_battery_new_scaling');

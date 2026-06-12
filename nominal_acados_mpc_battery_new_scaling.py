@@ -17,30 +17,38 @@ import csv
 np.random.seed(42)
 CELSIUS_TO_KELVIN = 273.15
 
+### Model of battery dynamics and optimization to find steady state
 class BatteryDynamics:
-    def __init__(self): # remove gym_env for cascaded tank
+    ## Battery dynamics
+    def __init__(self): 
         pass
-    def model(self, T_env): # remove gym_env for cascaded tank
+    def model(self, T_env): 
         model = cs.types.SimpleNamespace()
+        # Scaling on variables so they are in the same magnitude
+        # Should be a min max scaling instead (see readme)
         model.omega_scale = 100
         model.Q_heat_scale = 1000
         model.T_bat_scale = 100
         model.current_scale = 25
+
         model.T_env = T_env
+
         T_bat_normalized = cs.MX.sym('T_bat_normalized')
         T_bat = model.T_bat_scale * T_bat_normalized
         X = cs.vertcat(T_bat_normalized)
 
+        # Pump angular velocity
         omega_normalized = cs.MX.sym('omega_norm')
-        omega = model.omega_scale * omega_normalized #cs.MX.sym('omega') # Power into heater/cooler given as efficiency*Pin
+        omega = model.omega_scale * omega_normalized 
+        # Heating / cooling power into HCU
         Q_heat_normalized = cs.MX.sym('Q_heat_norm')
-        Q_heat = model.Q_heat_scale * Q_heat_normalized #cs.MX.sym('Q_heat') # Pump control (rpm that is converted to kg/s)
+        Q_heat = model.Q_heat_scale * Q_heat_normalized 
+        # Current from drive cycle (will be given as a parameter)
         current_normalized = cs.MX.sym('current_normalized')
         current = model.current_scale*current_normalized
 
         P = cs.vertcat(current_normalized)
         
-        #nn_on = cs.MX.sym('nn_on') # Flip switch for whether on not to have the NN in the model (helps when NN not trained yet)
         
         U = cs.vertcat(omega_normalized, Q_heat_normalized)
         
@@ -48,30 +56,28 @@ class BatteryDynamics:
         nu = 2
 
         # Parameters
-        m_battery = 20*2.5*4
-        c_battery = 795
-        c_coolant = 3500
-        density_coolant = 1050
+        m_battery = 20*2.5*4 # Mass of battery 
+        c_battery = 795 # Specific heat capacity for battery
+        c_coolant = 3500 # Specific heat capacity for coolant
+        density_coolant = 1050 
         
         pump_displacement = 1/(2*np.pi)*40/(100**3) # D parameter in simulink
         R_battery = 4*20*0.0128 # Battery resistance
-        C_battery = 28*3600 # in coloumb
-        hA_bat = 2500 # 2500
+        C_battery = 28*3600 # Capacity
+        hA_bat = 2500 # heat transfer constant
 
+        # Identified fitting parameters
+        alpha_0 = 0.635039  
+        alpha_1 = 0.915692  
+        alpha_2 = 0.919681   
+        alpha_3 = 1.47275 
+        gamma = 7.38325 
         
-
-        # Identified
-        alpha_0 = 0.635039 # 0.637968 
-        alpha_1 = 0.915692 # 1 
-        alpha_2 = 0.919681 # 0.980682  
-        alpha_3 = 1.47275 # 0.981036
-        gamma = 7.38325 # 7.
-    
-        
+        ## Dynamics
+        # Mass flow rate
         mdot_c = density_coolant*pump_displacement*omega
-        # Dynamics
         
-        # Get the cooler in and out temps
+        # Number of thermal units, coolant in and out temperatures. 1e-3 in denominator to avoid singularities
         NTU_bat  = (alpha_3*hA_bat) / (mdot_c*c_coolant + 1e-3)
         T_clin= (T_bat + alpha_1*(1/(1-np.exp(-NTU_bat)))*Q_heat/(mdot_c*c_coolant + 1e-3))
         T_clout = ((T_clin - T_bat) * alpha_2*np.exp(-NTU_bat) + T_bat)
@@ -83,20 +89,18 @@ class BatteryDynamics:
         constraint.T_clout_max = 100 + CELSIUS_TO_KELVIN
         constraint.expr = cs.vertcat(T_clin, T_clout)
 
+        # Heating/cooling power transferred into battery from coolant
         Q_cool = mdot_c*c_coolant*(T_clout - T_clin)
-
-        # Now for the actual calculations 
+        # Dynamics
         T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(T_env - T_bat))/model.T_bat_scale
-       
         X_dot_nominal = cs.vertcat(T_bat_dot_model)
         T_bat_dot_function = cs.Function("f_model", [T_bat_normalized, current_normalized, omega_normalized, Q_heat_normalized], 
         [T_bat_dot_model], ["T_bat_normalized", "current_normalized", "omega_normalized", "Q_heat_normalized"], ["ode"])
-
         f_expl = X_dot_nominal 
+        
         x_start = np.array([T_env/model.T_bat_scale]) # initial constraint (gets overwritten)
 
         # store to struct
-        
         model.x = X 
         model.xdot = cs.MX.sym('xdot', 1)
         model.u = U
@@ -105,23 +109,23 @@ class BatteryDynamics:
         model.f_expl = f_expl
         model.f_nominal = X_dot_nominal
         model.x_start = x_start
-        model.constraints = cs.vertcat([]) # add constraints here or in mpc?
+        model.constraints = cs.vertcat([]) 
         model.name = "battery_nominal"
         model.T_bat_dot_function = T_bat_dot_function
 
-        
         return model, constraint 
+
     def optimization_problem_steady_state(self, dt, T_env):
+        ## Steady state selection optimization problem
         T_bat_scale = 100
         omega_scale = 100
-
+        current_scale = 25
         Q_heat_scale = 1000
 
-        # Works in normalized 
+        # Add scaling to cost so cost is on unscaled T_bat
         Q = np.diag([10*T_bat_scale**2])
         R = np.diag([1,10])   
-        
-        #R = np.diag([1, 155000])   
+        # Cost for slack
         T = np.diag([10000000,10000000])
 
 
@@ -136,7 +140,6 @@ class BatteryDynamics:
 
         # State symbolic variables
         T_bat_normalized = cs.SX.sym('T_bat_normalized')
-        
         T_bat = T_bat_normalized*T_bat_scale
         slack_RK4 = cs.SX.sym("Slack RK4")
         slack_ss = cs.SX.sym("Slack ss")
@@ -158,7 +161,6 @@ class BatteryDynamics:
 
         # disturbances 
         current_normalized = cs.SX.sym("I_bat_norm")
-        current_scale = 25
         current = current_scale*current_normalized
 
         disturbances = cs.vertcat(current_normalized)
@@ -172,46 +174,41 @@ class BatteryDynamics:
 
         T_env = T_env
         T_bat_target = (20.5 + CELSIUS_TO_KELVIN)/T_bat_scale
-        # discretization model (e.g. x2 = f(x1, v, t) = x1 + v*dt)
-        # Parameters
+
+        # Model parameters (same as in BatteryDynamics)
         m_battery = 20*2.5*4
         c_battery = 795
         c_coolant = 3500
         density_coolant = 1050
         omega = omega_scale * omega_norm
-        # CHANGE HERE
         Q_heat = Q_heat_scale * Q_heat_norm
         pump_displacement = 1/(2*np.pi)*40/(100**3) # D parameter in simulink
         mdot_c = density_coolant*pump_displacement*omega
         R_battery = 4*20*0.0128 # Battery resistance
         C_battery = 28*3600 # in coloumb
         hA_bat = 2500
-        # Identified
-        alpha_0 = 0.635039 # 0.637968 
-        alpha_1 = 0.915692 # 1 
-        alpha_2 = 0.919681 # 0.980682  
-        alpha_3 = 1.47275 # 0.981036
-        gamma = 7.38325 # 7.
-        # Arbitrary
-        #alpha_0 = 0.3 # 1.4 # arbitrary
-        #alpha_1 = 0.1 #0.8 # 1 
-        #alpha_2 = 2 # 0.980682  
-        #alpha_3 = 2 # 0.981036
-        #gamma = 5 # 7.
+
+        # Fitting parameters (same as in BatteryDynamics)
+        alpha_0 = 0.635039 
+        alpha_1 = 0.915692  
+        alpha_2 = 0.919681   
+        alpha_3 = 1.47275 
+        gamma = 7.38325 
+
         # column vector for storing disturbances 
         P = cs.SX.sym('P', n_disturbances)
 
-        # Get the cooler in and out temps
+        # Dynamics (same as in BatteryDynamics)
+
         NTU_bat  = (alpha_3 * hA_bat) / (mdot_c*c_coolant + 1e-3)
         T_clin= (T_bat + alpha_1*(1/(1-cs.exp(-NTU_bat)))*Q_heat/(mdot_c*c_coolant + 1e-3))
         T_clout = ((T_clin - T_bat) * alpha_2*cs.exp(-NTU_bat) + T_bat)
         T_clin_min = -20 + CELSIUS_TO_KELVIN
-        T_clin_max = 50 + CELSIUS_TO_KELVIN
+        T_clin_max = 100 + CELSIUS_TO_KELVIN # Used to be 50
         T_clout_min = -20 + CELSIUS_TO_KELVIN 
-        T_clout_max = 50 + CELSIUS_TO_KELVIN
+        T_clout_max = 100 + CELSIUS_TO_KELVIN
         Q_cool = mdot_c*c_coolant*(T_clout - T_clin)
 
-        # Now for the actual calculations 
         T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma * (T_env - T_bat))/T_bat_scale
         ode_model = T_bat_dot_model
 
@@ -232,7 +229,7 @@ class BatteryDynamics:
         st_next = X[:, 1]
 
         K1 = f_model(st, U, disturbances)
-        st_next_RK4 = st + (step_horizon) * K1 # + 2*K2 + 2*K3 + K4)
+        st_next_RK4 = st + (step_horizon) * K1 
 
         g = cs.vertcat(g,T_clin_eval, T_clout_eval, st_next - st_next_RK4 + slack_RK4) # Basically saying X[:, k+1] = runge kutta evaluation
 
@@ -264,12 +261,8 @@ class BatteryDynamics:
 
         # Set constraints
         omega_max = (4000*2*np.pi/60)/omega_scale
-            
         omega_min = (150*2*np.pi/60)/omega_scale
-        print("omega max", omega_max)
-            
         Q_heat_max = 4000/Q_heat_scale
-        print("Q_heat max", Q_heat_max)
         Q_heat_min = -4000/Q_heat_scale
 
         lbx = cs.DM.zeros((n_states*(N+1) + N*n_controls + N*n_slack, 1))
@@ -283,7 +276,6 @@ class BatteryDynamics:
         ubx[-4] = omega_max
         ubx[-3] = Q_heat_max
         ubx[-2:] = 100
-        print(ubx)
         lg = cs.DM.zeros(4, 1)
         ug = cs.DM.zeros(4, 1)
 
@@ -301,22 +293,23 @@ class BatteryDynamics:
             'lbx': lbx, 
             'ubx': ubx
         }
-             # optimization variable current state
+        # optimization variable current state
         steady_state_args['x0'] = cs.vertcat(
             cs.reshape(X0, n_states*(N+1), 1),
             cs.reshape(u0, n_controls*N, 1),
             cs.reshape(s0, n_slack * N ,1)
         )
         return steady_state_solver, steady_state_args
-
+### Model predictive controller definition
 class MPC:
     def __init__(self, model, constraint, N, t_horizon):
+        # Model and constraints from BatteryDynamics
         self.model = model
         self.constraint = constraint
         self.N = N
         self.t_horizon = t_horizon
 
-    @property # a decorator
+    @property 
     def solver(self):
         return AcadosOcpSolver(self.ocp())
     
@@ -329,12 +322,13 @@ class MPC:
 
         # Get model
         model_ac = self.acados_model(model=model, constraint=constraint)
+        # Expressions for non linear constraints (coolant temperatures)
         model_ac.con_h_expr = constraint.expr
         model_ac.con_h_expr_0 = constraint.expr
         # Dimensions
         nx = 1
         nu = 2
-        ny = nx + nu # Stage cost
+        ny = nx + nu # Stage cost variable dimension
         ny_e = nx # Terminal cost considers only states
         nh = constraint.expr.shape[0]
         
@@ -362,20 +356,20 @@ class MPC:
         ocp.cost.cost_type_e = 'LINEAR_LS'
 
         # state 
-        ocp.cost.Vx = np.zeros((ny, nx)) # i feel like this should be nx,nx ||Vx x||^2 
+        ocp.cost.Vx = np.zeros((ny, nx)) 
         for i in range(nx):
-            ocp.cost.Vx[i,i] = 1 # so set the matrix coeff corr to u to 0. maybe the dim of Vx is set to be the same as Vu
+            ocp.cost.Vx[i,i] = 1 
         ocp.cost.Vu = np.zeros((ny, nu))
         for i in range(nu):
             ocp.cost.Vu[i + nx, i] = 1
-        ocp.cost.Vz = np.array([[]]) # don't know what the V_z z, what the variable z should be
+        ocp.cost.Vz = np.array([[]]) # No algebraic states here
         ocp.cost.Vx_e = np.eye(nx)
-        #l4c_y_expr = None
+      
 
         # Define weight parameters
+        # T_bat is in scaled formulation, so add scaling to cost so it operates on the unscaled T_bat
         Q = np.diag([10*model.T_bat_scale**2])
         R = np.diag([1,10])
-        #R = np.diag([1,155000])
         
         ocp.cost.W = scipy.linalg.block_diag(Q,R)
         ocp.cost.W_e = Q 
@@ -387,13 +381,10 @@ class MPC:
 
         # Set constraints
         omega_max = (4000*2*np.pi/60)/model.omega_scale
-        
-        omega_min = (150*2*np.pi/60)/model.omega_scale
-        print("omega max", omega_max)
-    
+        omega_min = (150*2*np.pi/60)/model.omega_scale    
         Q_heat_max = 4000/model.Q_heat_scale
-        print("Q_heat max", Q_heat_max)
         Q_heat_min = -4000/model.Q_heat_scale
+
         Tb_max = (50 + CELSIUS_TO_KELVIN)/model.T_bat_scale
         Tb_min = (-20 + CELSIUS_TO_KELVIN)/model.T_bat_scale
 
@@ -401,7 +392,7 @@ class MPC:
         ocp.constraints.ubu = np.array([omega_max, Q_heat_max])
 
         ocp.constraints.idxbu = np.array([0,1])
-        ocp.constraints.idxbx = np.array([0]) # at what indices to have constraints
+        ocp.constraints.idxbx = np.array([0]) 
         ocp.constraints.ubx = np.array([Tb_max])
         ocp.constraints.lbx = np.array([Tb_min])
         
@@ -452,7 +443,7 @@ class MPC:
         ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
         ocp.solver_options.integrator_type = "ERK"
         ocp.solver_options.nlp_solver_type = "SQP_RTI"
-        ocp.solver_options.sim_method_num_stages = 1
+        ocp.solver_options.sim_method_num_stages = 1 # Use explicit euler integration
         
         # Will be overwritten
         ocp.parameter_values = 0
@@ -472,25 +463,24 @@ class MPC:
         return model_ac
 
 
-
+### Controller including setup, get_steady_state, get_cost_to_go, collect_data, get_input
 class Controller:
     def setup(self, T_bat_target, T_env):
 
         # MPC Setup 
-        self.N =200 #200 # 80
-        self.t_horizon = self.N * 5
+        self.N =200 # Prediction horizon
+        self.t_horizon = self.N * 5 # In time, remember we sample every 5 s so with N = 200 --> t_horizon = 1000 s
+        self.dt = self.t_horizon/self.N # 5 s
+
         model = BatteryDynamics()
-      
         casadi_model, constraint = model.model(T_env=T_env)
         self.T_bat_dot_function = casadi_model.T_bat_dot_function
         self.solver = MPC(model=casadi_model, constraint=constraint, N=self.N, t_horizon = self.t_horizon).solver # Returns the solver object from MPC
+        
+        # Time for which simulation is warm started. I.e. for the first 30 s a pre-determined input is used
+        self.T_warm_start = 30 # Helps with initializing the Simulink so that the first iterations are not super slow
 
-        # SOC_ref = None # This is not actually tracked
-        self.dt = self.t_horizon/self.N
-        self.obs_buffer = []
-        self.batch_size = self.N # at most self.N - self.T_warm_start at least
-        self.T_update = 60 
-        self.T_warm_start = 30
+
         self.current_iterate = 0
         self.xt_pred = np.array([CELSIUS_TO_KELVIN])
         self.x_last = np.array([0])
@@ -506,11 +496,9 @@ class Controller:
         self.current_scale = casadi_model.current_scale
         self.T_env = T_env
 
-        #self.residual_dictionary = {'run': [], 'T_bat':[], 'current': [], 'omega_scaled':[], 'Q_heat_scaled':[], 'residual': []}
         self.residual_dictionary = {'run': [], 'T_bat':[], 'current': [], 'omega_scaled': [], 'Q_heat_scaled': [], 'Q_cool':[], 'residual': [], 'T_bat_dot_model': [], 'T_bat_dot_euler': [] }
         
         # Reading disturbance info
-        #df = pd.read_csv("current_intp1.csv", names=["current"])
         df = pd.read_csv("current_rms_5s.csv", names=["current"])
 
         arr = df.to_numpy(dtype=np.float32)
@@ -519,17 +507,16 @@ class Controller:
         self.steady_state_solver, self.steady_state_args = model.optimization_problem_steady_state(dt=self.dt, T_env=T_env)
         
     def get_steady_state(self, T_bat_target):
-        
+        # Gets steady state for tracking (so reference on input is not 0, but u_ss)
         args = self.steady_state_args
         
         disturbances = self.disturbance_values
-        #current_N = 0 
-        #current_N = disturbances[int(self.dt*(self.current_iterate + self.N))].item()/self.current_scale
         current_N = disturbances[self.current_iterate + self.N].item()/self.current_scale
 
         args['p'] = cs.vertcat(
             current_N,
         )
+        # Call optimization problem for steady state (defined in BatteryDynamics)
         sol = self.steady_state_solver(
             x0 = args['x0'],
             lbx = args['lbx'],
@@ -543,19 +530,20 @@ class Controller:
         Q_heat_norm_ss = sol['x'][3]
 
         return omega_norm_ss.full().item(), Q_heat_norm_ss.full().item()
-    # Calculates cost-to-go for recursive feasibility (linearized)
+
     def get_cost_to_go(self, T_bat_target, T_env, omega_norm_ss, Q_heat_norm_ss):
+        # Calculates cost-to-go for recursive feasibility (linearized)
         T_bat_target = T_bat_target/self.T_bat_scale
         T_bat_normalized = cs.MX.sym('T_bat_normalized')
         T_bat = self.T_bat_scale * T_bat_normalized
         omega_norm = cs.MX.sym('omega_norm')
         omega = self.omega_scale * omega_norm
         Q_heat_norm = cs.MX.sym('Q_heat_norm')
-        Q_heat = self.Q_heat_scale * Q_heat_norm #cs.MX.sym('Q_heat')
+        Q_heat = self.Q_heat_scale * Q_heat_norm 
 
         U = cs.vertcat(omega_norm, Q_heat_norm)
                 
-        # Parameters
+        # Parameters (same as in BatteryDynamics)
         m_battery = 20*2.5*4
         c_battery = 795
         c_coolant = 3500
@@ -566,30 +554,23 @@ class Controller:
         C_battery = 28*3600 # in coloumb
         hA_bat = 2500        
 
-        # Identified
-        alpha_0 = 0.635039 # 0.637968 
+        # Fitting parameters (same as in BatteryDynamics)
+        alpha_0 = 0.635039 
         alpha_1 = 0.915692
         alpha_2 = 0.919681 
-        alpha_3 = 1.47275 # 0.981036
-        gamma = 7.38325 # 7.
-        # Arbitrary
-        #alpha_0 = 0.3 # 1.4 # arbitrary
-        #alpha_1 = 0.1 # 1 
-        #alpha_2 = 2 # 0.980682  
-        #alpha_3 = 2 # 0.981036
-        #gamma = 5 # 7.
-                
+        alpha_3 = 1.47275 
+        gamma = 7.38325 
+  
+        # Dynamics              
         mdot_c = density_coolant*pump_displacement*omega
-        # Dynamics
-                
-        # Get the cooler in and out temps
         NTU_bat  = (alpha_3*hA_bat) / (mdot_c*c_coolant + 1e-3)
         T_clin= (T_bat + alpha_1*(1/(1-np.exp(-NTU_bat)))*Q_heat/(mdot_c*c_coolant + 1e-3))
         T_clout = ((T_clin - T_bat) * alpha_2*np.exp(-NTU_bat) + T_bat)
         Q_cool = mdot_c*c_coolant*(T_clout - T_clin)
 
-        # Now for the actual calculations 
         T_bat_dot_model = alpha_0/(m_battery*c_battery) * (- Q_cool + gamma*(T_env - T_bat))
+        
+        # Linearization by calculating Jacobians
         f_T_bat_dot = cs.Function("f_model", [T_bat_normalized,U], [T_bat_dot_model], ["x", "u"], ["ode"])
 
         jac_T_bat = cs.jacobian(T_bat_dot_model, T_bat_normalized)
@@ -607,13 +588,12 @@ class Controller:
         q = 10*self.T_bat_scale**2
         r = np.diag([1,10])
         
-        #r = np.diag([1,155000])
         cost_to_go = scipy.linalg.solve_continuous_are(a = a, b = b, q = q, r = r).item()
         Q_e = np.diag([cost_to_go])
         return Q_e, cost_to_go
     def collect_data(self, T_bat_0, dT_bat):
-        # input and disturbance values (not symbolics because know what happened)
-        # Not sure if should take current values or last, but figure that at this moment the change is happening because of the last values
+        # Save data to be used in pretraining 
+
         omega = self.omega_last
         Q_heat = self.Q_heat_last 
         current = self.current_last
@@ -624,8 +604,8 @@ class Controller:
         dT_bat_euler = (T_bat_k - T_bat_k_minus_1)/self.dt
         
 
-        # Caluclate derivative with model
-        # Parameters
+        
+        # Parameters (same as in BatteryDynamics)
         m_battery = 20*2.5*4
         c_battery = 795
         c_coolant = 3500
@@ -636,16 +616,16 @@ class Controller:
         C_battery = 28*3600 # in coloumb
         hA_bat = 2500
 
-        alpha_0 = 0.635039 #0.65
-        alpha_1 = 0.915692 # 0.99 #0.998427 #0.99
-        alpha_2 = 0.919681  #0.999686 #.97
+        # Fitting parameters (same as in BatteryDynamics)
+        alpha_0 = 0.635039 
+        alpha_1 = 0.915692 
+        alpha_2 = 0.919681  
         alpha_3 = 1.47275
         gamma = 7.38325
-            
+
+        # Dynamics          
         mdot_c = density_coolant*pump_displacement*omega
-        # Dynamics
-            
-        # Get the cooler in and out temps
+  
         NTU_bat  = (alpha_3*hA_bat) / (mdot_c*c_coolant + 1e-3)
         T_clin= (self.T_bat_last + alpha_1*(1/(1-np.exp(-NTU_bat)))*Q_heat/(mdot_c*c_coolant + 1e-3))
         T_clout = ((T_clin - self.T_bat_last) * alpha_2*np.exp(-NTU_bat) + self.T_bat_last)
@@ -653,9 +633,10 @@ class Controller:
         Q_cool = mdot_c*c_coolant*(T_clout - T_clin)
 
         T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(self.T_env - self.T_bat_last))
+
+        # Dynamics residual
         residual = dT_bat_euler - T_bat_dot_model
 
-        self.obs_buffer.append((dT_bat_euler, T_bat_dot_model))
         self.data.append((self.T_bat_last, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale))
         self.residual_dictionary['run'].append(0)
         self.residual_dictionary['T_bat'].append(self.T_bat_last/self.T_bat_scale)
@@ -668,11 +649,13 @@ class Controller:
         self.residual_dictionary['T_bat_dot_euler'].append(dT_bat_euler)
 
     def get_input(self, T_bat_target, T_bat_0, SOC_0, current_0, dT_bat, dSOC):
-       
+        # MPC step that returns input (and other values for plotting)
         print("--------------------------------")
-        print("NOMINAL ACADOS MPC BATTERY MODEL WITH TARGET TRACKING AND COST-TO-GO")
+        print("NOMINAL MPC BATTERY MODEL WITH TARGET TRACKING AND COST-TO-GO")
         T_bat_target = T_bat_target/self.T_bat_scale
+        
         if self.current_iterate == 0:
+            # Warm start solver for iterate = 0
             self.xt_pred = ([T_bat_0])
             # Warm start
             omega_warm_start = (2000*2*np.pi/60)/self.omega_scale
@@ -681,72 +664,52 @@ class Controller:
             else:
                 Q_heat_warm_start = -2000/self.Q_heat_scale
             input_warm_start = np.array([omega_warm_start, Q_heat_warm_start])
-            self.solver.set(0, 'u', input_warm_start) # Weird but this is how acados does warm starts. Does not "force" inputs to be this
+            self.solver.set(0, 'u', input_warm_start) 
             state_warm_start = np.array([T_bat_0/self.T_bat_scale])
             self.solver.set(0, 'x', state_warm_start)
         disturbances = self.disturbance_values
         T_env = self.T_env
-        # Set reference for each step in MPC horizon
-        #print(disturbances[0], current_0)
+        
+        # Get steady state reference for inputs
         omega_norm_ss, Q_heat_norm_ss = self.get_steady_state(T_bat_target=T_bat_target)
+        # Get cost-to-go weighting matrix
         Q_e, cost_to_go = self.get_cost_to_go(T_bat_target, T_env, omega_norm_ss, Q_heat_norm_ss)
-        print("omega_ss", omega_norm_ss, "Q_heat_ss", Q_heat_norm_ss)
-        print("Q_e", Q_e)
+   
+        # Set reference and current (disturbance) for each step in MPC horizon
         for k in range(self.N):
-            #if k == 0: # only store first reference
-                #Tb_ref_history.append(Tb_ref)
-                # SOC_ref_history.append(SOC_ref)
-            # Set terminal reference
-            # y_ref_k = np.array([Tb_ref, SOC_ref, 0])
             y_ref_k = np.array([T_bat_target, omega_norm_ss, Q_heat_norm_ss])
             self.solver.set(k, "yref", y_ref_k)
-            # Potential for error
-            # T_env must be in Kelvin
-            
-            #param_values = 0
-            #param_values = disturbances[int(self.dt*(self.current_iterate + k))].item()/self.current_scale
             param_values = disturbances[self.current_iterate + k].item()/self.current_scale
             
             self.solver.set(k, "p", param_values)
 
         # Set terminal reference
-        # y_ref_terminal = np.array([Tb_ref, SOC_ref])
-        y_ref_terminal = np.array([T_bat_target]) # Terminal cost only on states so 2x1 instead of 4x1 above
-        #print(y_ref_terminal)
+        y_ref_terminal = np.array([T_bat_target]) # Terminal cost only on states 
         self.solver.set(self.N, "yref", y_ref_terminal)
-        #param_values = 0
-        #param_values = disturbances[int(self.dt*(self.current_iterate + self.N))].item()/self.current_scale
+        # Set current on last time step
         param_values = disturbances[self.current_iterate + self.N].item()/self.current_scale
 
-
         self.solver.set(self.N, "p", param_values)
-
+        # Set cost-to-go on terminal node
         self.solver.cost_set(self.N, 'W', Q_e)
 
         start = time.time()
-        xt = np.array([T_bat_0/self.T_bat_scale])
-        #self.solver.set(0, "x", xt)
-        
-    
+        xt = np.array([T_bat_0/self.T_bat_scale])    
 
         # Apply current state as constraint
         self.solver.set(0, "lbx", xt)
         self.solver.set(0, "ubx", xt)
 
         omega_min, omega_max = (150*2*np.pi/60)/self.omega_scale, (4000*2*np.pi/60)/self.omega_scale
-            
-        Q_heat_min, Q_heat_max = -4000/self.Q_heat_scale, 4000/self.Q_heat_scale
-       
-        #u_min_tightened = np.array([omega_min, Q_heat_min]) + s_norm
-        #u_max_tightened = np.array([omega_max, Q_heat_max]) - s_norm
-        #self.solver.constraints_set(0, 'lbu', u_min_tightened)
-        #self.solver.constraints_set(0, 'ubu', u_max_tightened)
+        Q_heat_min, Q_heat_max = -4000/self.Q_heat_scale, 4000/self.Q_heat_scale       
+
         # Solve mpc and apply control
         self.solver.solve()
+        
         self.total_cost += self.solver.get_cost()
-        # ut = solver.get(0, "u").item()
+        # Input
         ut = self.solver.get(0, "u")
-        #print("SOLVER solution", ut)
+
         shooting_node = 1
         slack_lower = self.solver.get(shooting_node, "sl")
         slack_upper = self.solver.get(shooting_node, "su")
@@ -754,18 +717,15 @@ class Controller:
         print("Slacks for shooting node {}".format(shooting_node))
         print("slack lower", slack_lower, "slack upper", slack_upper)
         # Saturation
-        #omega_value = min(ut[0].item(), omega_max - s_omega_norm)
-        #Q_heat_value = min(ut[1].item(), Q_heat_max - s_Q_heat_norm)
-        #omega_value = max(omega_value, omega_min + s_omega_norm)
-        #Q_heat_value = max(Q_heat_value, Q_heat_min + s_Q_heat_norm)
         omega_value = min(ut[0].item(), omega_max)
         Q_heat_value = min(ut[1].item(), Q_heat_max)
         omega_value = max(omega_value, omega_min)
         Q_heat_value = max(Q_heat_value, Q_heat_min)
         omega_value = self.omega_scale * omega_value
         Q_heat_value = self.Q_heat_scale * Q_heat_value
-        #print("inputs normalized", ut)
+        
         print("inputs normalized", ut)
+        
         status = self.solver.get_status()
         if status != 0:
             print("ERROR", status, "at iterate", self.current_iterate)
@@ -775,15 +735,13 @@ class Controller:
         pred_error = 0
         pred_error_nn = 0
         T_bat_pred = 0
-        T_bat_pred_nn = 0
-        # Collect training data for NN
+        T_bat_pred_nn = 0 # No NN so set to 0 always
         T_bat_dot_model = dT_bat
         T_bat_dot_nn = dT_bat
         dT_bat_euler = dT_bat
-        if self.current_iterate  > 0:
 
-            # input and disturbance values (not symbolics because know what happened)
-            # Not sure if should take current values or last, but figure that at this moment the change is happening because of the last values
+        if self.current_iterate  > 0:
+            # Calculate prediction error
             omega = self.omega_last
             Q_heat = self.Q_heat_last 
             current = self.current_last
@@ -795,8 +753,8 @@ class Controller:
             print("derivative read from model", dT_bat, "derivative euler step", dT_bat_euler)
 
 
-            # Caluclate derivative with model
-            # Parameters
+            # Calculate derivative with model
+            # Parameters (same as in BatteryDynamics)
             m_battery = 20*2.5*4
             c_battery = 795
             c_coolant = 3500
@@ -807,18 +765,15 @@ class Controller:
             C_battery = 28*3600 # in coloumb
             hA_bat = 2500
 
-            alpha_0 = 0.635039 #0.65
-            alpha_1 = 0.915692 # 0.99 #0.998427 #0.99
-            alpha_2 = 0.919681  #0.999686 #.97
+            # Fitting parameters (same as in BatteryDynamics)
+            alpha_0 = 0.635039 
+            alpha_1 = 0.915692 
+            alpha_2 = 0.919681 
             alpha_3 = 1.47275
             gamma = 7.38325
-            # Arbitrary
-            #alpha_1 = 0.1 # 1 
-            #alpha_2 = 2 # 0.980682  
-            mdot_c = density_coolant*pump_displacement*omega
+
             # Dynamics
-            
-            # Get the cooler in and out temps
+            mdot_c = density_coolant*pump_displacement*omega
             NTU_bat  = (alpha_3*hA_bat) / (mdot_c*c_coolant + 1e-3)
             T_clin= (self.T_bat_last + alpha_1*(1/(1-np.exp(-NTU_bat)))*Q_heat/(mdot_c*c_coolant + 1e-3))
             T_clout = ((T_clin - self.T_bat_last) * alpha_2*np.exp(-NTU_bat) + self.T_bat_last)
@@ -828,19 +783,12 @@ class Controller:
             T_bat_dot_model = alpha_0/(m_battery*c_battery) * (current**2 * R_battery - Q_cool + gamma*(self.T_env - self.T_bat_last))
                 
             K1 = cs.DM.full(self.T_bat_dot_function(T_bat_k_minus_1, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)).item()
-            #K2 = self.T_bat_dot_function(T_bat_k_minus_1 + self.dt * K1, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)
-            #K3 = self.T_bat_dot_function(T_bat_k_minus_1 + self.dt * K2, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)
-            #K4 = self.T_bat_dot_function(T_bat_k_minus_1 +  K3, current, omega/self.omega_scale, Q_heat/self.Q_heat_scale)
-            
-            T_bat_pred = T_bat_k_minus_1 + (self.dt ) * (K1) # + 2*K2 + 2*K3 + K4)
-            #T_bat_pred = T_bat_k_minus_1 + self.dt * (T_bat_dot_model)
+
+            T_bat_pred = T_bat_k_minus_1 + (self.dt ) * (K1) 
             pred_error_nn = T_bat_pred - T_bat_k
             T_bat_pred_nn = T_bat_pred
             T_bat_dot_nn = T_bat_dot_model
 
-        #u_N = self.solver.get(10,'u')
-        #print('slacking off input', u_N)
-        
         
         # Want to compare prediction at time step 0 with value at time step 1
         # So delay update of xt pred
@@ -853,38 +801,35 @@ class Controller:
         
               
         self.xt_pred = np.array([pred[0].item()])
+        # Collect data on state, inputs and disturbance now, which in next iteration will be the last applied 
         self.x_last = xt
         self.omega_last = omega_value
         self.Q_heat_last = Q_heat_value
-        #self.current_last = disturbances[int(self.dt*(self.current_iterate))].item()     
         self.current_last = disturbances[self.current_iterate].item()   
-        #self.current_last = 0 
+
+        # Collect data
         if self.current_iterate > 0:
             self.collect_data(T_bat_0, dT_bat)
   
         self.T_bat_last = T_bat_0
+
         if (self.current_iterate * self.dt) < self.T_warm_start:
-            #print("WARM STARTING")
+            # Warm start (helps with initializing Simulink)
             if T_bat_0/self.T_bat_scale > T_bat_target: # Cooling regime
                 omega_value, Q_heat_value = self.omega_scale*omega_max, self.Q_heat_scale*Q_heat_min
             else: # Heating regime
                 omega_value, Q_heat_value = self.omega_scale*omega_max, self.Q_heat_scale*Q_heat_max
     
-
+        # Save data to CSV
         if self.dt*self.current_iterate >= 3*2470:
             df = pd.DataFrame(data=self.residual_dictionary)
             df.to_csv("residuals_matched_heating_T_env_5.csv", index=False)
 
         elapsed = 1000*(time.time() - start)
-        T_bat_target = T_bat_target * self.T_bat_scale
 
-        print(omega_value, Q_heat_value, self.xt_pred[0]*self.T_bat_scale, T_bat_0, T_bat_target)
-
-
-        print("cumulative cost", self.total_cost)
         print(elapsed, 'ms')
         print("--------------------------------")
         self.current_iterate += 1
-        nn_on = 0
-        print(slack_x)
+        nn_on = 0 # No neural network
+        # Only omega_value and Q_heat_value is needed for control, rest for plotting
         return omega_value, Q_heat_value, T_bat_pred_nn, T_bat_pred, pred_error_nn, pred_error, self.omega_scale*omega_norm_ss, self.Q_heat_scale*Q_heat_norm_ss, cost_to_go, elapsed, T_bat_dot_model, T_bat_dot_nn, dT_bat_euler, nn_on, slack_x

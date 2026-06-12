@@ -19,7 +19,7 @@ random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
 # Load dataset of residuals
-csv_path = os.path.join(os.path.dirname(__file__), 'cascaded_residuals.csv')
+csv_path = os.path.join(os.path.dirname(__file__), 'cascaded_residuals_fixed_epochs.csv')
 df = pd.read_csv(csv_path)
 print(df.head())
 
@@ -56,7 +56,7 @@ def main():
     input_dim = 3
     output_dim = 2
     hidden_dim = 8
-    num_layers = 1
+    num_layers = 2
 
     model = MLP(input_dim=input_dim, output_dim=output_dim, hidden_dim=hidden_dim, num_layers=num_layers).to(device)
     residual_mlp = MLP(input_dim = input_dim, output_dim=output_dim, hidden_dim=hidden_dim, num_layers=num_layers) # the network
@@ -84,7 +84,7 @@ def main():
         loss.backward() # calculates gradient
         residual_optimizer.step() # one optimization step to update parameters
     end = time.time()
-    torch.save(residual_mlp.state_dict(), "cascaded_tanks_pretrain.pth")
+    torch.save(residual_mlp.state_dict(), "cascaded_tanks_pretrain_fixed_epochs.pth")
 
     print("elapsed", 1000*(end-start))
 

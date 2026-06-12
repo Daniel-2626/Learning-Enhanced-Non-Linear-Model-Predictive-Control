@@ -32,7 +32,7 @@ class MLP(nn.Module):
         inp = torch.cat([x,u], dim=1)
         net =  self.net(inp)
         return net
-        return self.tau* torch.tanh(net)
+        #return self.tau* torch.tanh(net)
 class L4CWrapper(nn.Module):
     def __init__(self, torchnet):
         super().__init__()
@@ -46,7 +46,7 @@ class CascadedTankLearnedDynamics:
         self.residual_model = residual_model # Residual model is L4Casadi residual
     
     def model(self):
-        nominal_ratio = 1
+        nominal_ratio = 0.7
         A1 = 1 #* nominal_ratio
         a1 = 0.1 * nominal_ratio
         A2 = 1 #* nominal_ratio
@@ -212,8 +212,8 @@ h1 = cs.SX.sym('h1')
 h2 = cs.SX.sym('h2') 
 u = cs.SX.sym('u_in')
 ## Actual model
-h1_dot = k*u/(rho*A1) - a1/A1 * cs.sqrt(2*g*h1+0.00001) #+ a2/A2 * cs.sqrt(2*g*h2 + 0.00001) 
-#h1_dot = k*u/(rho*A1)*cs.exp(-u/10) - a1/A1 * cs.sqrt(2*g*h1+0.00001) #+ a2/A2 * cs.sqrt(2*g*h2 + 0.00001) 
+#h1_dot = k*u/(rho*A1) - a1/A1 * cs.sqrt(2*g*h1+0.00001) #+ a2/A2 * cs.sqrt(2*g*h2 + 0.00001) 
+h1_dot = k*u/(rho*A1)*cs.exp(-u/10) - a1/A1 * cs.sqrt(2*g*h1+0.00001) #+ a2/A2 * cs.sqrt(2*g*h2 + 0.00001) 
 
 h2_dot = a1/A1 * cs.sqrt(2*g*h1 + 0.00001) - a2/A2 * cs.sqrt(2*g*h2 + 0.00001) #- 0.1*k*u/(rho*A2)
 ode = cs.vertcat(h1_dot, h2_dot)
@@ -300,7 +300,6 @@ output_dim = 2
 hidden_dim = 8
 num_layers = 2
 
-model = MLP(input_dim=input_dim, output_dim=output_dim, hidden_dim=hidden_dim, num_layers=num_layers).to(device)
 residual_mlp = MLP(input_dim = input_dim, output_dim=output_dim, hidden_dim=hidden_dim, num_layers=num_layers) # the network
 
 residual_mlp.load_state_dict(torch.load("cascaded_tanks_traj_pretrain.pth", weights_only=True))
@@ -309,7 +308,7 @@ for param in residual_mlp.parameters():
     param.requires_grad = False
 l4c_wrapped = L4CWrapper(residual_mlp)
 l4c_residual = l4c.L4CasADi(l4c_wrapped, name="cascadedtank", mutable=True)
-residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=learning_rate, weight_decay=0.01) # lr = learning rate, the optimizer
+residual_optimizer = torch.optim.AdamW(residual_mlp.parameters(), lr=learning_rate, weight_decay=0.1) # lr = learning rate, the optimizer
 residual_criterion = nn.MSELoss()
 
 
@@ -345,7 +344,7 @@ residual_dictionary = {'run': [], 'h1':[], 'h2': [], 'u': [], 'residual_1': [], 
 results_adaptive = {'run': [], 'h1':[], 'h2': [], 'u': []}
 
 def DM2Arr(dm):
-    # returns a full matrix instead if a soarse ibe
+    # returns a full matrix instead if a sparse one
     return np.array(dm.full())
 
 for i in range(Steps):
@@ -416,8 +415,8 @@ for i in range(Steps):
         data = np.array(obs_buffer[-batch_size:])
         X_batch = torch.tensor(data[:, :3], dtype=torch.float32)
         #print(X_batch)
-        # Configurable rollout length (e.g., 5 steps ahead)
-        T_rollout = 1
+
+        T_rollout = N
         weight = 1.0  # Optional discount factor if you want to weight early steps higher
 
         for param in residual_mlp.parameters():
@@ -436,9 +435,6 @@ for i in range(Steps):
                 h_pred = torch.cat([h1.reshape(1,1), h2.reshape(1,1)], dim=0) # 2x1 vector
                 
                 # Rollout sequentially for T_rollout steps
-                # Rollout sequentially for T_rollout steps
-                # Rollout sequentially for T_rollout steps
-                # Rollout sequentially for T_rollout steps
                 for step in range(T_rollout):
                     t = k0 + step
                     
@@ -448,9 +444,7 @@ for i in range(Steps):
                     u_in = X_batch[t, 2].reshape(1,1)
                     h_next_true = torch.cat([X_batch[t+1, 0].reshape(1,1), X_batch[t+1, 1].reshape(1,1)], dim=0)
 
-                    # ==========================================================
-                    # 1. LOCAL JACOBIAN REGULARIZATION (The Vector Field)
-                    # ==========================================================
+             
                     mlp_input_jac = h_pred.detach().reshape(1, 2).requires_grad_(True)
                     dot_res_jac = residual_mlp(mlp_input_jac, u_in)
                     
@@ -471,9 +465,6 @@ for i in range(Steps):
                                              grad_f1[0, 1]**2 + grad_f2[0, 1]**2)
 
 
-                    # ==========================================================
-                    # 4. COMBINED INTEGRATION MATCHING & TOTAL LOSS
-                    # ==========================================================
                     h_pred_next = RK4_combined_torch(h_pred, u_in, dt, residual_mlp)
                     
                     # Base Mean Squared Error for tracking the true state

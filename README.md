@@ -9,7 +9,9 @@ This repository contains a Battery Thermal Management (BTM) system simulated in 
 
 * **Simulink Model:** `Adaptive_Cool_and_Heat_EVBatteryCoolingSystem`
 * **Main Contribution:** Code for the Model Predictive Control (MPC) formulation of battery thermal management.
+
 The Simulink model includes a "Python Code Block" within which Python Files are called for the controllers. Inside of this Python Code Block the reference temperature and environment temperature should also be set. 
+
 The primary goal of this thesis was to solve "model mismatch" using Neural Networks. The methodology followed two main steps:
 
 1. A baseline model was developed based on physical principles and parameter fitting.

@@ -20,7 +20,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import root_mean_squared_error#mean_squared_error
 from scipy.signal import savgol_filter
 
-
+"""
+NOT USED IN THESIS, BUT FEW TESTS WE DID SEEMED GOOD
+"""
 seed = sum([ord(char) for char in "DIAMONDS"])
 np.random.seed(seed)
 random.seed(seed)
@@ -1069,21 +1071,6 @@ class Controller:
         print(elapsed, 'ms')
         #print("--------------------------------")
         self.current_iterate += 1
-        print("omega", type(omega_value))
-        print("Q_heat_value", type(Q_heat_value))
-        print("T_bat_pred_nn", type(T_bat_pred_nn))
-        print("T_bat_pred", type(T_bat_pred))
-        print("pred_error_nn", type(pred_error_nn))
-        print("pred_error", type(pred_error))
-        print("self.omega_scale*omega_norm_ss", type(self.omega_scale*omega_norm_ss))
-        print("self.Q_heat_scale*Q_heat_norm_ss", type(self.Q_heat_scale*Q_heat_norm_ss))
-        print("cost_to_go", type(cost_to_go))
-        print("elapsed", type(elapsed))
-        print("T_bat_dot_model", type(T_bat_dot_model))
-        print("T_bat_dot_nn", type(T_bat_dot_nn))
-        print("dT_bat_euler", type(dT_bat_euler))
-        print(" self.nn_on", type( self.nn_on))
-        print("slack_x", type(slack_x))
 
         T_bat_dot_model, T_bat_dot_nn, dT_bat_euler, self.nn_on, slack_x
 

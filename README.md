@@ -7,8 +7,10 @@
 
 This repository contains a Battery Thermal Management (BTM) system simulated in Simulink, based on the [MathWorks EV Battery Cooling System model](https://se.mathworks.com/help/hydro/ug/ev-battery-cooling.html).
 
-* **Core Model:** `Adaptive_Cool_and_Heat_EVBatteryCoolingSystem`
+* **Simulink Model:** `Adaptive_Cool_and_Heat_EVBatteryCoolingSystem`
 * **Main Contribution:** Code for the Model Predictive Control (MPC) formulation of battery thermal management.
+
+The Simulink model includes a "Python Code Block" within which Python Files are called for the controllers. Inside of this Python Code Block the reference temperature and environment temperature should also be set. 
 
 The primary goal of this thesis was to solve "model mismatch" using Neural Networks. The methodology followed two main steps:
 
@@ -73,6 +75,21 @@ For a quick introduction to the inner workings of the learning-enhanced nonlinea
 | `nominal_mpc_cascaded_tanks` | Baseline MPC based on a physics model. |
 | `traj_adaptive_nn_mpc_cascaded_tanks` | Adaptive MPC utilizing trajectory loss. |
 | `deriv_adaptive_nn_mpc_cascaded_tanks` | Adaptive MPC utilizing derivative loss. |
+
+### Implementation without L4CasADi
+
+The folder "DirectLearning/" showcases how to do learning-enhanced nonlinear model predictive control directly without using L4CasADi. L4CasADi is a great tool but in some cases it might be simpler to not use it. The code for learning was written in April 2026 and is different from the final implementation presented in the thesis. 
+
+These two files support running a Cascaded Tank simulation with a potentially mismatched control model. 
+
+All code for the optimization/simulation is in MATLAB in the script "MATLAB_adaptive_deriv_loss_cascaded_tank.m". 
+
+Neural network training is in Python ("train_network.py") and imported to MATLAB. 
+
+You need to have a download of CasADi. See installation instructions of CasADi in MATLAB: https://web.casadi.org/get/
+
+This is a very lightweight implementation and does not require many libraries (see the library imports in the Python file for requirements).
+
 
 ### Other Code & Analysis
 

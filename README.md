@@ -88,6 +88,8 @@ Neural network training is in Python ("train_network.py") and imported to MATLAB
 
 You need to have a download of CasADi. See installation instructions of CasADi in MATLAB: https://web.casadi.org/get/
 
+This is a very lightweight implementation and does not require many libraries (see the library imports in the Python file for requirements).
+
 
 ### Other Code & Analysis
 

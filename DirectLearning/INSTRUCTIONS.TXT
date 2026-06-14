@@ -1,0 +1,13 @@
+This code was written in April 2026 and does not represent the full nerual network training that was used in the thesis. 
+
+What it does however, is showcases how to do learning-enhanced nonlinear model predictive control without using L4CasADi. L4CasADi is a great tool but in some cases it might be simpler to not use it. 
+
+These two files support running a Cascaded Tank simulation with a potentially mismatched control model. 
+
+All code for the optimization/simulation is in MATLAB in the script "MATLAB_adaptive_deriv_loss_cascaded_tank.m". 
+
+Neural network training is in Python ("train_network.py") and imported to MATLAB. 
+
+You need to have a download of CasADi. See installation instructions of CasADi in MATLAB: https://web.casadi.org/get/
+
+

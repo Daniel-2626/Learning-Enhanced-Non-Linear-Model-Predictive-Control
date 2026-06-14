@@ -80,7 +80,7 @@ For a quick introduction to the inner workings of the learning-enhanced nonlinea
 
 The folder "DirectLearning/" showcases how to do learning-enhanced nonlinear model predictive control directly without using L4CasADi. L4CasADi is a great tool but in some cases it might be simpler to not use it. The code for learning was written in April 2026 and is different from the final implementation presented in the thesis. 
 
-These two files support running a Cascaded Tank simulation with a potentially mismatched control model. 
+The folder includes files for running a Cascaded Tank simulation, with a potentially mismatched control model, and then doing learning to solve model mismatch. The MLP neural network is defined symbolically (as matrix multiplications, additions and passes through activation functions) with weights and biases given as parameters to the optimization in CasADi.  
 
 All code for the optimization/simulation is in MATLAB in the script "MATLAB_adaptive_deriv_loss_cascaded_tank.m". 
 
